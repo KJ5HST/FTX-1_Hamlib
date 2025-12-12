@@ -6,7 +6,7 @@
 
     <groupId>com.yaesu</groupId>
     <artifactId>ftx1-hamlib</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>1.0.1</version>
     <packaging>jar</packaging>
 
     <name>FTX1-Hamlib</name>
@@ -71,24 +71,18 @@
                 </configuration>
             </plugin>
 
-            <!-- Shade plugin for uber-jar -->
+            <!-- Spring Boot plugin for uber-jar with proper native library handling -->
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.5.1</version>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>3.2.0</version>
                 <executions>
                     <execution>
-                        <phase>package</phase>
                         <goals>
-                            <goal>shade</goal>
+                            <goal>repackage</goal>
                         </goals>
                         <configuration>
-                            <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.yaesu.jamlib.JamlibFTX1</mainClass>
-                                </transformer>
-                            </transformers>
-                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <mainClass>com.yaesu.jamlib.JamlibFTX1</mainClass>
                         </configuration>
                     </execution>
                 </executions>

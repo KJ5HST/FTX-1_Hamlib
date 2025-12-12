@@ -31,7 +31,7 @@ import java.util.List;
  */
 public class JamlibGUI extends JFrame {
 
-    private static final String VERSION = "1.0.0";
+    private static final String VERSION = "1.0.1";
     private static final int DEFAULT_TCP_PORT = 4532;
     private static final int DEFAULT_BAUD = 38400;
 

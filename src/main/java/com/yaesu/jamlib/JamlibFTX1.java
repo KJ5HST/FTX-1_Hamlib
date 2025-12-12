@@ -33,7 +33,7 @@ import java.io.IOException;
  */
 public class JamlibFTX1 {
 
-    public static final String VERSION = "1.0.0";
+    public static final String VERSION = "1.0.1";
     public static final int DEFAULT_PORT = 4532;
     public static final int DEFAULT_BAUD = 38400;
 
