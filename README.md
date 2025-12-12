@@ -1,6 +1,7 @@
 # FTX-1 Hamlib
 
-Hamlib-compatible emulator for Yaesu FTX-1 using the Java ftx1-cat library.
+Hamlib-compatible emulator for Yaesu FTX-1 using the Java ftx1-cat library. 
+Visit https://github.com/KJ5HST/FTX-1_CAT for more details on ftx1-cat.
 
 ## Overview
 
