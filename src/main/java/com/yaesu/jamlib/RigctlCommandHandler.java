@@ -11,10 +11,14 @@ import com.yaesu.ftx1.model.MeterType;
 import com.yaesu.ftx1.model.OperatingMode;
 import com.yaesu.ftx1.model.VFO;
 
+import java.util.Map;
+import java.util.Objects;
+
 /**
  * Handler for rigctl protocol commands.
  * <p>
  * Implements the rigctld protocol commands, translating them to FTX-1 CAT operations.
+ * Thread-safe: all rig operations are synchronized.
  * </p>
  */
 public class RigctlCommandHandler {
@@ -24,11 +28,42 @@ public class RigctlCommandHandler {
     private static final int RPRT_EPROTO = -2;
     private static final int RPRT_ENAVAIL = -11;
 
+    // Bidirectional mode mappings (Hamlib <-> OperatingMode)
+    private static final Map<String, OperatingMode> HAMLIB_TO_MODE = Map.ofEntries(
+            Map.entry("LSB", OperatingMode.LSB),
+            Map.entry("USB", OperatingMode.USB),
+            Map.entry("CW", OperatingMode.CW_U),
+            Map.entry("CWR", OperatingMode.CW_L),
+            Map.entry("AM", OperatingMode.AM),
+            Map.entry("FM", OperatingMode.FM),
+            Map.entry("RTTY", OperatingMode.RTTY_L),
+            Map.entry("RTTYR", OperatingMode.RTTY_U),
+            Map.entry("PKTLSB", OperatingMode.DATA_L),
+            Map.entry("PKTUSB", OperatingMode.DATA_U),
+            Map.entry("PKTFM", OperatingMode.DATA_FM)
+    );
+
+    private static final Map<OperatingMode, String> MODE_TO_HAMLIB = Map.ofEntries(
+            Map.entry(OperatingMode.LSB, "LSB"),
+            Map.entry(OperatingMode.USB, "USB"),
+            Map.entry(OperatingMode.CW_U, "CW"),
+            Map.entry(OperatingMode.CW_L, "CWR"),
+            Map.entry(OperatingMode.AM, "AM"),
+            Map.entry(OperatingMode.FM, "FM"),
+            Map.entry(OperatingMode.RTTY_L, "RTTY"),
+            Map.entry(OperatingMode.RTTY_U, "RTTYR"),
+            Map.entry(OperatingMode.DATA_L, "PKTLSB"),
+            Map.entry(OperatingMode.DATA_U, "PKTUSB"),
+            Map.entry(OperatingMode.DATA_FM, "PKTFM")
+    );
+
     private final FTX1 rig;
+    private final Object rigLock;  // Synchronization lock for rig operations
     private final boolean verbose;
 
     public RigctlCommandHandler(FTX1 rig, boolean verbose) {
-        this.rig = rig;
+        this.rig = Objects.requireNonNull(rig, "rig must not be null");
+        this.rigLock = rig;  // Use rig itself as lock for cross-handler synchronization
         this.verbose = verbose;
     }
 
@@ -63,167 +98,78 @@ public class RigctlCommandHandler {
     }
 
     private String dispatch(String cmd, String args) throws CatException {
-        switch (cmd) {
+        return switch (cmd) {
             // Frequency
-            case "f":
-            case "get_freq":
-                return getFreq();
-
-            case "F":
-            case "set_freq":
-                return setFreq(args);
+            case "f", "get_freq" -> getFreq();
+            case "F", "set_freq" -> setFreq(args);
 
             // Mode
-            case "m":
-            case "get_mode":
-                return getMode();
-
-            case "M":
-            case "set_mode":
-                return setMode(args);
+            case "m", "get_mode" -> getMode();
+            case "M", "set_mode" -> setMode(args);
 
             // PTT
-            case "t":
-            case "get_ptt":
-                return getPtt();
-
-            case "T":
-            case "set_ptt":
-                return setPtt(args);
+            case "t", "get_ptt" -> getPtt();
+            case "T", "set_ptt" -> setPtt(args);
 
             // VFO
-            case "v":
-            case "get_vfo":
-                return getVfo();
-
-            case "V":
-            case "set_vfo":
-                return setVfo(args);
+            case "v", "get_vfo" -> getVfo();
+            case "V", "set_vfo" -> setVfo(args);
 
             // Levels
-            case "l":
-            case "get_level":
-                return getLevel(args);
-
-            case "L":
-            case "set_level":
-                return setLevel(args);
+            case "l", "get_level" -> getLevel(args);
+            case "L", "set_level" -> setLevel(args);
 
             // Raw command
-            case "w":
-            case "send_cmd":
-                return sendCmd(args);
+            case "w", "send_cmd" -> sendCmd(args);
 
             // Info
-            case "_":
-            case "get_info":
-                return getInfo();
-
-            case "1":
-            case "dump_caps":
-                return dumpCaps();
+            case "_", "get_info" -> getInfo();
+            case "1", "dump_caps" -> dumpCaps();
 
             // Split
-            case "s":
-            case "get_split_vfo":
-                return getSplitVfo();
-
-            case "S":
-            case "set_split_vfo":
-                return setSplitVfo(args);
+            case "s", "get_split_vfo" -> getSplitVfo();
+            case "S", "set_split_vfo" -> setSplitVfo(args);
 
             // Functions
-            case "u":
-            case "get_func":
-                return getFunc(args);
-
-            case "U":
-            case "set_func":
-                return setFunc(args);
+            case "u", "get_func" -> getFunc(args);
+            case "U", "set_func" -> setFunc(args);
 
             // Help
-            case "?":
-            case "help":
-                return getHelp();
+            case "?", "help" -> getHelp();
 
-            case "q":
-            case "quit":
-            case "exit":
-                return "RPRT " + RPRT_OK + "\n";
+            case "q", "quit", "exit" -> "RPRT " + RPRT_OK + "\n";
 
             // Extended commands (backslash prefix)
-            case "\\dump_state":
-                return dumpState();
+            case "\\dump_state" -> dumpState();
+            case "\\get_powerstat" -> getPowerStat();
+            case "\\set_powerstat" -> setPowerStat(args);
+            case "\\chk_vfo" -> chkVfo();
+            case "\\get_vfo_info" -> getVfoInfo(args);
+            case "\\get_rig_info" -> getRigInfo();
+            case "\\get_split_mode" -> getSplitMode();
+            case "\\set_split_mode" -> setSplitMode(args);
+            case "\\get_split_freq" -> getSplitFreq();
+            case "\\set_split_freq" -> setSplitFreq(args);
+            case "\\get_split_freq_mode" -> getSplitFreqMode();
+            case "\\set_split_freq_mode" -> setSplitFreqMode(args);
+            case "\\get_clock" -> getClock();
+            case "\\set_clock" -> setClock(args);
+            case "\\get_lock_mode" -> getLockMode();
+            case "\\set_lock_mode" -> setLockMode(args);
+            case "\\send_morse" -> sendMorse(args);
+            case "\\stop_morse" -> stopMorse();
+            case "\\wait_morse" -> waitMorse();
+            case "\\send_voice_mem" -> sendVoiceMem(args);
+            case "\\halt" -> halt();
+            case "\\pause" -> pause(args);
 
-            case "\\get_powerstat":
-                return getPowerStat();
-
-            case "\\set_powerstat":
-                return setPowerStat(args);
-
-            case "\\chk_vfo":
-                return chkVfo();
-
-            case "\\get_vfo_info":
-                return getVfoInfo(args);
-
-            case "\\get_rig_info":
-                return getRigInfo();
-
-            case "\\get_split_mode":
-                return getSplitMode();
-
-            case "\\set_split_mode":
-                return setSplitMode(args);
-
-            case "\\get_split_freq":
-                return getSplitFreq();
-
-            case "\\set_split_freq":
-                return setSplitFreq(args);
-
-            case "\\get_split_freq_mode":
-                return getSplitFreqMode();
-
-            case "\\set_split_freq_mode":
-                return setSplitFreqMode(args);
-
-            case "\\get_clock":
-                return getClock();
-
-            case "\\set_clock":
-                return setClock(args);
-
-            case "\\get_lock_mode":
-                return getLockMode();
-
-            case "\\set_lock_mode":
-                return setLockMode(args);
-
-            case "\\send_morse":
-                return sendMorse(args);
-
-            case "\\stop_morse":
-                return stopMorse();
-
-            case "\\wait_morse":
-                return waitMorse();
-
-            case "\\send_voice_mem":
-                return sendVoiceMem(args);
-
-            case "\\halt":
-                return halt();
-
-            case "\\pause":
-                return pause(args);
-
-            default:
+            default -> {
                 if (verbose) {
                     System.err.println("Unknown command: " + cmd);
                 }
-                return "RPRT " + RPRT_EINVAL + "\n";
-        }
+                yield "RPRT " + RPRT_EINVAL + "\n";
+            }
+        };
     }
 
     // ========================================================================
@@ -231,8 +177,10 @@ public class RigctlCommandHandler {
     // ========================================================================
 
     private String getFreq() throws CatException {
-        long freq = rig.getFrequency(VFO.MAIN);
-        return freq + "\n";
+        synchronized (rigLock) {
+            long freq = rig.getFrequency(VFO.MAIN);
+            return freq + "\n";
+        }
     }
 
     private String setFreq(String args) throws CatException {
@@ -242,7 +190,9 @@ public class RigctlCommandHandler {
         // Parse as double first to handle floating point format (e.g., "28074055.000000")
         double freqDouble = Double.parseDouble(args.trim());
         long freq = Math.round(freqDouble);
-        rig.setFrequency(VFO.MAIN, freq);
+        synchronized (rigLock) {
+            rig.setFrequency(VFO.MAIN, freq);
+        }
         return "RPRT " + RPRT_OK + "\n";
     }
 
@@ -251,46 +201,47 @@ public class RigctlCommandHandler {
     // ========================================================================
 
     private String getMode() throws CatException {
-        OperatingMode mode = rig.getMode(VFO.MAIN);
-        // Return mode and passband (0 = default)
-        return mode.name() + "\n0\n";
+        synchronized (rigLock) {
+            OperatingMode mode = rig.getMode(VFO.MAIN);
+            String hamlibMode = mapModeToHamlib(mode);
+            return hamlibMode + "\n0\n";
+        }
     }
 
     private String setMode(String args) throws CatException {
         String[] parts = args.split("\\s+");
-        if (parts.length < 1) {
+        if (parts.length < 1 || parts[0].isEmpty()) {
             return "RPRT " + RPRT_EINVAL + "\n";
         }
         String modeName = parts[0].toUpperCase();
 
         // Map Hamlib mode names to OperatingMode
-        OperatingMode mode;
-        try {
-            mode = mapHamlibMode(modeName);
-        } catch (IllegalArgumentException e) {
+        OperatingMode mode = mapHamlibMode(modeName);
+        if (mode == null) {
             return "RPRT " + RPRT_EINVAL + "\n";
         }
 
-        rig.setMode(VFO.MAIN, mode);
+        synchronized (rigLock) {
+            rig.setMode(VFO.MAIN, mode);
+        }
         return "RPRT " + RPRT_OK + "\n";
     }
 
     private OperatingMode mapHamlibMode(String name) {
-        switch (name) {
-            case "LSB": return OperatingMode.LSB;
-            case "USB": return OperatingMode.USB;
-            case "CW": return OperatingMode.CW_U;
-            case "CWR": return OperatingMode.CW_L;
-            case "AM": return OperatingMode.AM;
-            case "FM": return OperatingMode.FM;
-            case "RTTY": return OperatingMode.RTTY_L;
-            case "RTTYR": return OperatingMode.RTTY_U;
-            case "PKTLSB": return OperatingMode.DATA_L;
-            case "PKTUSB": return OperatingMode.DATA_U;
-            case "PKTFM": return OperatingMode.DATA_FM;
-            default:
-                return OperatingMode.valueOf(name);
+        OperatingMode mode = HAMLIB_TO_MODE.get(name);
+        if (mode != null) {
+            return mode;
         }
+        // Try direct enum lookup as fallback
+        try {
+            return OperatingMode.valueOf(name);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private String mapModeToHamlib(OperatingMode mode) {
+        return MODE_TO_HAMLIB.getOrDefault(mode, mode.name());
     }
 
     // ========================================================================
@@ -298,8 +249,10 @@ public class RigctlCommandHandler {
     // ========================================================================
 
     private String getPtt() throws CatException {
-        boolean ptt = rig.isPtt();
-        return (ptt ? "1" : "0") + "\n";
+        synchronized (rigLock) {
+            boolean ptt = rig.isPtt();
+            return (ptt ? "1" : "0") + "\n";
+        }
     }
 
     private String setPtt(String args) throws CatException {
@@ -307,7 +260,9 @@ public class RigctlCommandHandler {
             return "RPRT " + RPRT_EINVAL + "\n";
         }
         int ptt = Integer.parseInt(args.trim());
-        rig.setPtt(ptt > 0);
+        synchronized (rigLock) {
+            rig.setPtt(ptt > 0);
+        }
         return "RPRT " + RPRT_OK + "\n";
     }
 
@@ -316,9 +271,10 @@ public class RigctlCommandHandler {
     // ========================================================================
 
     private String getVfo() throws CatException {
-        VFO vfo = rig.getActiveVfo();
-        String hamlibVfo = (vfo == VFO.MAIN) ? "VFOA" : "VFOB";
-        return hamlibVfo + "\n";
+        synchronized (rigLock) {
+            VFO vfo = rig.getActiveVfo();
+            return (vfo == VFO.MAIN ? "VFOA" : "VFOB") + "\n";
+        }
     }
 
     private String setVfo(String args) throws CatException {
@@ -326,15 +282,17 @@ public class RigctlCommandHandler {
             return "RPRT " + RPRT_EINVAL + "\n";
         }
         String vfoName = args.trim().toUpperCase();
-        VFO vfo;
-        if (vfoName.equals("VFOA") || vfoName.equals("MAIN") || vfoName.equals("A")) {
-            vfo = VFO.MAIN;
-        } else if (vfoName.equals("VFOB") || vfoName.equals("SUB") || vfoName.equals("B")) {
-            vfo = VFO.SUB;
-        } else {
+        VFO vfo = switch (vfoName) {
+            case "VFOA", "MAIN", "A" -> VFO.MAIN;
+            case "VFOB", "SUB", "B" -> VFO.SUB;
+            default -> null;
+        };
+        if (vfo == null) {
             return "RPRT " + RPRT_EINVAL + "\n";
         }
-        rig.setActiveVfo(vfo);
+        synchronized (rigLock) {
+            rig.setActiveVfo(vfo);
+        }
         return "RPRT " + RPRT_OK + "\n";
     }
 
@@ -349,40 +307,39 @@ public class RigctlCommandHandler {
 
         String level = args.trim().toUpperCase();
 
-        switch (level) {
-            case "RFPOWER":
-            case "RF":
-                double power = rig.getPower();
-                double maxPower = rig.getMaxPower();
-                return String.format("%.2f\n", power / maxPower);
-
-            case "AF":
-                int afGain = rig.getAFGain(VFO.MAIN);
-                return String.format("%.2f\n", afGain / 255.0);
-
-            case "SQL":
-                int sql = rig.getSquelch(VFO.MAIN);
-                return String.format("%.2f\n", sql / 100.0);
-
-            case "STRENGTH":
-            case "S":
-                int smeter = rig.getSmeter();
-                return smeter + "\n";
-
-            case "SWR":
-                int swr = rig.getMeter(MeterType.SWR);
-                return String.format("%.1f\n", swr / 10.0);
-
-            case "ALC":
-                int alc = rig.getMeter(MeterType.ALC);
-                return alc + "\n";
-
-            case "COMP":
-                int comp = rig.getMeter(MeterType.COMP);
-                return comp + "\n";
-
-            default:
-                return "RPRT " + RPRT_EINVAL + "\n";
+        synchronized (rigLock) {
+            return switch (level) {
+                case "RFPOWER", "RF" -> {
+                    double power = rig.getPower();
+                    double maxPower = rig.getMaxPower();
+                    yield String.format("%.2f\n", power / maxPower);
+                }
+                case "AF" -> {
+                    int afGain = rig.getAFGain(VFO.MAIN);
+                    yield String.format("%.2f\n", afGain / 255.0);
+                }
+                case "SQL" -> {
+                    int sql = rig.getSquelch(VFO.MAIN);
+                    yield String.format("%.2f\n", sql / 100.0);
+                }
+                case "STRENGTH", "S" -> {
+                    int smeter = rig.getSmeter();
+                    yield smeter + "\n";
+                }
+                case "SWR" -> {
+                    int swr = rig.getMeter(MeterType.SWR);
+                    yield String.format("%.1f\n", swr / 10.0);
+                }
+                case "ALC" -> {
+                    int alc = rig.getMeter(MeterType.ALC);
+                    yield alc + "\n";
+                }
+                case "COMP" -> {
+                    int comp = rig.getMeter(MeterType.COMP);
+                    yield comp + "\n";
+                }
+                default -> "RPRT " + RPRT_EINVAL + "\n";
+            };
         }
     }
 
@@ -395,26 +352,26 @@ public class RigctlCommandHandler {
         String level = parts[0].toUpperCase();
         String value = parts[1];
 
-        switch (level) {
-            case "RFPOWER":
-            case "RF":
-                double powerNorm = Double.parseDouble(value);
-                double watts = powerNorm * rig.getMaxPower();
-                rig.setPower(watts);
-                return "RPRT " + RPRT_OK + "\n";
-
-            case "AF":
-                double afNorm = Double.parseDouble(value);
-                rig.setAFGain(VFO.MAIN, (int)(afNorm * 255));
-                return "RPRT " + RPRT_OK + "\n";
-
-            case "SQL":
-                double sqlNorm = Double.parseDouble(value);
-                rig.setSquelch(VFO.MAIN, (int)(sqlNorm * 100));
-                return "RPRT " + RPRT_OK + "\n";
-
-            default:
-                return "RPRT " + RPRT_EINVAL + "\n";
+        synchronized (rigLock) {
+            return switch (level) {
+                case "RFPOWER", "RF" -> {
+                    double powerNorm = Double.parseDouble(value);
+                    double watts = powerNorm * rig.getMaxPower();
+                    rig.setPower(watts);
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "AF" -> {
+                    double afNorm = Double.parseDouble(value);
+                    rig.setAFGain(VFO.MAIN, (int) (afNorm * 255));
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "SQL" -> {
+                    double sqlNorm = Double.parseDouble(value);
+                    rig.setSquelch(VFO.MAIN, (int) (sqlNorm * 100));
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                default -> "RPRT " + RPRT_EINVAL + "\n";
+            };
         }
     }
 
@@ -423,17 +380,21 @@ public class RigctlCommandHandler {
     // ========================================================================
 
     private String getSplitVfo() throws CatException {
-        boolean split = rig.isSplitEnabled();
-        return (split ? "1" : "0") + "\nVFOB\n";
+        synchronized (rigLock) {
+            boolean split = rig.isSplitEnabled();
+            return (split ? "1" : "0") + "\nVFOB\n";
+        }
     }
 
     private String setSplitVfo(String args) throws CatException {
         String[] parts = args.split("\\s+");
-        if (parts.length < 1) {
+        if (parts.length < 1 || parts[0].isEmpty()) {
             return "RPRT " + RPRT_EINVAL + "\n";
         }
         int split = Integer.parseInt(parts[0]);
-        rig.setSplit(split > 0);
+        synchronized (rigLock) {
+            rig.setSplit(split > 0);
+        }
         return "RPRT " + RPRT_OK + "\n";
     }
 
@@ -448,21 +409,21 @@ public class RigctlCommandHandler {
 
         String func = args.trim().toUpperCase();
 
-        switch (func) {
-            case "TUNER":
-                // Only available with SPA-1
-                if (rig.hasSpa1()) {
-                    // Would need to add getTuner() to FTX1 API
-                    return "0\n";  // TODO: implement when API available
+        synchronized (rigLock) {
+            return switch (func) {
+                case "TUNER" -> {
+                    // Only available with SPA-1
+                    if (rig.hasSpa1()) {
+                        yield "0\n";  // TODO: implement when API available
+                    }
+                    yield "RPRT " + RPRT_ENAVAIL + "\n";
                 }
-                return "RPRT " + RPRT_ENAVAIL + "\n";
-
-            case "LOCK":
-                boolean locked = rig.isLocked();
-                return (locked ? "1" : "0") + "\n";
-
-            default:
-                return "RPRT " + RPRT_EINVAL + "\n";
+                case "LOCK" -> {
+                    boolean locked = rig.isLocked();
+                    yield (locked ? "1" : "0") + "\n";
+                }
+                default -> "RPRT " + RPRT_EINVAL + "\n";
+            };
         }
     }
 
@@ -475,21 +436,15 @@ public class RigctlCommandHandler {
         String func = parts[0].toUpperCase();
         int value = Integer.parseInt(parts[1]);
 
-        switch (func) {
-            case "TUNER":
-                // Only available with SPA-1
-                if (rig.hasSpa1()) {
-                    // Would need to add setTuner() to FTX1 API
-                    return "RPRT " + RPRT_ENAVAIL + "\n";  // TODO: implement
+        synchronized (rigLock) {
+            return switch (func) {
+                case "TUNER" -> "RPRT " + RPRT_ENAVAIL + "\n";  // TODO: implement
+                case "LOCK" -> {
+                    rig.setLocked(value > 0);
+                    yield "RPRT " + RPRT_OK + "\n";
                 }
-                return "RPRT " + RPRT_ENAVAIL + "\n";
-
-            case "LOCK":
-                rig.setLocked(value > 0);
-                return "RPRT " + RPRT_OK + "\n";
-
-            default:
-                return "RPRT " + RPRT_EINVAL + "\n";
+                default -> "RPRT " + RPRT_EINVAL + "\n";
+            };
         }
     }
 
@@ -513,8 +468,10 @@ public class RigctlCommandHandler {
             cmd = cmd.substring(0, cmd.length() - 1);
         }
 
-        String response = rig.sendRawCommand(cmd);
-        return response + "\n";
+        synchronized (rigLock) {
+            String response = rig.sendRawCommand(cmd);
+            return response + "\n";
+        }
     }
 
     // ========================================================================
@@ -522,29 +479,33 @@ public class RigctlCommandHandler {
     // ========================================================================
 
     private String getInfo() {
-        HeadType headType = rig.getHeadType();
-        return "FTX-1 " + headType.getDisplayName() + "\n";
+        synchronized (rigLock) {
+            HeadType headType = rig.getHeadType();
+            return "FTX-1 " + headType.getDisplayName() + "\n";
+        }
     }
 
     private String dumpCaps() {
-        HeadType headType = rig.getHeadType();
+        synchronized (rigLock) {
+            HeadType headType = rig.getHeadType();
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("Caps dump for model: 1051\n");
-        sb.append("Model name:\tFTX-1\n");
-        sb.append("Mfg name:\tYaesu\n");
-        sb.append("Backend version:\t1.0\n");
-        sb.append("Backend status:\tBeta\n");
-        sb.append("Rig type:\tTransceiver\n");
-        sb.append("PTT type:\tRig capable\n");
-        sb.append("Port type:\tRS-232\n");
-        sb.append("Serial speed:\t38400\n");
-        sb.append("Head type:\t").append(headType.getDisplayName()).append("\n");
-        sb.append("Min power:\t").append(headType.getMinPowerWatts()).append("W\n");
-        sb.append("Max power:\t").append(headType.getMaxPowerWatts()).append("W\n");
-        sb.append("Has tuner:\t").append(headType.hasInternalTuner() ? "Y" : "N").append("\n");
+            StringBuilder sb = new StringBuilder(512);
+            sb.append("Caps dump for model: 1051\n");
+            sb.append("Model name:\tFTX-1\n");
+            sb.append("Mfg name:\tYaesu\n");
+            sb.append("Backend version:\t1.0\n");
+            sb.append("Backend status:\tBeta\n");
+            sb.append("Rig type:\tTransceiver\n");
+            sb.append("PTT type:\tRig capable\n");
+            sb.append("Port type:\tRS-232\n");
+            sb.append("Serial speed:\t38400\n");
+            sb.append("Head type:\t").append(headType.getDisplayName()).append("\n");
+            sb.append("Min power:\t").append(headType.getMinPowerWatts()).append("W\n");
+            sb.append("Max power:\t").append(headType.getMaxPowerWatts()).append("W\n");
+            sb.append("Has tuner:\t").append(headType.hasInternalTuner() ? "Y" : "N").append("\n");
 
-        return sb.toString();
+            return sb.toString();
+        }
     }
 
     private String getHelp() {
@@ -610,48 +571,53 @@ public class RigctlCommandHandler {
         VFO vfo = VFO.MAIN;
         if (!args.isEmpty()) {
             String vfoName = args.trim().toUpperCase();
-            if (vfoName.equals("VFOB") || vfoName.equals("SUB") || vfoName.equals("B")) {
-                vfo = VFO.SUB;
-            }
+            vfo = switch (vfoName) {
+                case "VFOB", "SUB", "B" -> VFO.SUB;
+                default -> VFO.MAIN;
+            };
         }
 
-        long freq = rig.getFrequency(vfo);
-        OperatingMode mode = rig.getMode(vfo);
-        String hamlibVfo = (vfo == VFO.MAIN) ? "VFOA" : "VFOB";
+        synchronized (rigLock) {
+            long freq = rig.getFrequency(vfo);
+            OperatingMode mode = rig.getMode(vfo);
+            String hamlibVfo = (vfo == VFO.MAIN) ? "VFOA" : "VFOB";
 
-        // Format: Freq=... Mode=... Width=... VFO=...
-        StringBuilder sb = new StringBuilder();
-        sb.append("Freq=").append(freq).append("\n");
-        sb.append("Mode=").append(mapModeToHamlib(mode)).append("\n");
-        sb.append("Width=0\n");  // 0 = default passband
-        sb.append("VFO=").append(hamlibVfo).append("\n");
-
-        return sb.toString();
+            StringBuilder sb = new StringBuilder(128);
+            sb.append("Freq=").append(freq).append("\n");
+            sb.append("Mode=").append(mapModeToHamlib(mode)).append("\n");
+            sb.append("Width=0\n");
+            sb.append("VFO=").append(hamlibVfo).append("\n");
+            return sb.toString();
+        }
     }
 
     /**
      * Gets rig info in key=value format.
      */
     private String getRigInfo() {
-        HeadType headType = rig.getHeadType();
+        synchronized (rigLock) {
+            HeadType headType = rig.getHeadType();
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("Model=FTX-1\n");
-        sb.append("Mfg=Yaesu\n");
-        sb.append("HeadType=").append(headType.getDisplayName()).append("\n");
-        sb.append("MinPower=").append(headType.getMinPowerWatts()).append("\n");
-        sb.append("MaxPower=").append(headType.getMaxPowerWatts()).append("\n");
-        sb.append("HasTuner=").append(headType.hasInternalTuner() ? "1" : "0").append("\n");
+            StringBuilder sb = new StringBuilder(256);
+            sb.append("Model=FTX-1\n");
+            sb.append("Mfg=Yaesu\n");
+            sb.append("HeadType=").append(headType.getDisplayName()).append("\n");
+            sb.append("MinPower=").append(headType.getMinPowerWatts()).append("\n");
+            sb.append("MaxPower=").append(headType.getMaxPowerWatts()).append("\n");
+            sb.append("HasTuner=").append(headType.hasInternalTuner() ? "1" : "0").append("\n");
 
-        return sb.toString();
+            return sb.toString();
+        }
     }
 
     /**
      * Gets split mode and passband.
      */
     private String getSplitMode() throws CatException {
-        OperatingMode mode = rig.getMode(VFO.SUB);
-        return mapModeToHamlib(mode) + "\n0\n";  // mode + passband
+        synchronized (rigLock) {
+            OperatingMode mode = rig.getMode(VFO.SUB);
+            return mapModeToHamlib(mode) + "\n0\n";
+        }
     }
 
     /**
@@ -659,11 +625,16 @@ public class RigctlCommandHandler {
      */
     private String setSplitMode(String args) throws CatException {
         String[] parts = args.split("\\s+");
-        if (parts.length < 1) {
+        if (parts.length < 1 || parts[0].isEmpty()) {
             return "RPRT " + RPRT_EINVAL + "\n";
         }
         OperatingMode mode = mapHamlibMode(parts[0].toUpperCase());
-        rig.setMode(VFO.SUB, mode);
+        if (mode == null) {
+            return "RPRT " + RPRT_EINVAL + "\n";
+        }
+        synchronized (rigLock) {
+            rig.setMode(VFO.SUB, mode);
+        }
         return "RPRT " + RPRT_OK + "\n";
     }
 
@@ -671,8 +642,10 @@ public class RigctlCommandHandler {
      * Gets split TX frequency.
      */
     private String getSplitFreq() throws CatException {
-        long freq = rig.getFrequency(VFO.SUB);
-        return freq + "\n";
+        synchronized (rigLock) {
+            long freq = rig.getFrequency(VFO.SUB);
+            return freq + "\n";
+        }
     }
 
     /**
@@ -682,10 +655,11 @@ public class RigctlCommandHandler {
         if (args.isEmpty()) {
             return "RPRT " + RPRT_EINVAL + "\n";
         }
-        // Parse as double to handle floating point format
         double freqDouble = Double.parseDouble(args.trim());
         long freq = Math.round(freqDouble);
-        rig.setFrequency(VFO.SUB, freq);
+        synchronized (rigLock) {
+            rig.setFrequency(VFO.SUB, freq);
+        }
         return "RPRT " + RPRT_OK + "\n";
     }
 
@@ -693,9 +667,11 @@ public class RigctlCommandHandler {
      * Gets split frequency and mode together.
      */
     private String getSplitFreqMode() throws CatException {
-        long freq = rig.getFrequency(VFO.SUB);
-        OperatingMode mode = rig.getMode(VFO.SUB);
-        return freq + "\n" + mapModeToHamlib(mode) + "\n0\n";  // freq + mode + passband
+        synchronized (rigLock) {
+            long freq = rig.getFrequency(VFO.SUB);
+            OperatingMode mode = rig.getMode(VFO.SUB);
+            return freq + "\n" + mapModeToHamlib(mode) + "\n0\n";
+        }
     }
 
     /**
@@ -706,13 +682,17 @@ public class RigctlCommandHandler {
         if (parts.length < 2) {
             return "RPRT " + RPRT_EINVAL + "\n";
         }
-        // Parse as double to handle floating point format
         double freqDouble = Double.parseDouble(parts[0]);
         long freq = Math.round(freqDouble);
         OperatingMode mode = mapHamlibMode(parts[1].toUpperCase());
+        if (mode == null) {
+            return "RPRT " + RPRT_EINVAL + "\n";
+        }
 
-        rig.setFrequency(VFO.SUB, freq);
-        rig.setMode(VFO.SUB, mode);
+        synchronized (rigLock) {
+            rig.setFrequency(VFO.SUB, freq);
+            rig.setMode(VFO.SUB, mode);
+        }
         return "RPRT " + RPRT_OK + "\n";
     }
 
@@ -720,7 +700,6 @@ public class RigctlCommandHandler {
      * Gets rig clock (not supported, return current time).
      */
     private String getClock() {
-        // Return current system time in ISO format
         return java.time.LocalDateTime.now().toString() + "\n";
     }
 
@@ -728,7 +707,6 @@ public class RigctlCommandHandler {
      * Sets rig clock (not supported).
      */
     private String setClock(String args) {
-        // Accept but ignore - FTX-1 doesn't have a settable clock
         return "RPRT " + RPRT_OK + "\n";
     }
 
@@ -736,8 +714,10 @@ public class RigctlCommandHandler {
      * Gets lock mode status.
      */
     private String getLockMode() throws CatException {
-        boolean locked = rig.isLocked();
-        return (locked ? "1" : "0") + "\n";
+        synchronized (rigLock) {
+            boolean locked = rig.isLocked();
+            return (locked ? "1" : "0") + "\n";
+        }
     }
 
     /**
@@ -748,22 +728,23 @@ public class RigctlCommandHandler {
             return "RPRT " + RPRT_EINVAL + "\n";
         }
         int lock = Integer.parseInt(args.trim());
-        rig.setLocked(lock > 0);
+        synchronized (rigLock) {
+            rig.setLocked(lock > 0);
+        }
         return "RPRT " + RPRT_OK + "\n";
     }
 
     /**
      * Sends Morse code (CW keying).
-     * Note: Requires rig to be in CW mode.
      */
-    private String sendMorse(String args) throws CatException {
+    private String sendMorse(String args) {
         if (args.isEmpty()) {
             return "RPRT " + RPRT_EINVAL + "\n";
         }
-        // FTX-1 supports CW keyer via KY command
-        // KYtext; sends the text
         try {
-            rig.sendRawCommand("KY" + args.trim());
+            synchronized (rigLock) {
+                rig.sendRawCommand("KY" + args.trim());
+            }
             return "RPRT " + RPRT_OK + "\n";
         } catch (CatException e) {
             return "RPRT " + RPRT_ENAVAIL + "\n";
@@ -773,10 +754,11 @@ public class RigctlCommandHandler {
     /**
      * Stops Morse sending.
      */
-    private String stopMorse() throws CatException {
-        // KY command with empty clears buffer
+    private String stopMorse() {
         try {
-            rig.sendRawCommand("KY");
+            synchronized (rigLock) {
+                rig.sendRawCommand("KY");
+            }
             return "RPRT " + RPRT_OK + "\n";
         } catch (CatException e) {
             return "RPRT " + RPRT_ENAVAIL + "\n";
@@ -787,25 +769,24 @@ public class RigctlCommandHandler {
      * Waits for Morse to complete.
      */
     private String waitMorse() {
-        // No way to know when CW keying is done, just return OK
         return "RPRT " + RPRT_OK + "\n";
     }
 
     /**
      * Plays voice memory.
      */
-    private String sendVoiceMem(String args) throws CatException {
+    private String sendVoiceMem(String args) {
         if (args.isEmpty()) {
             return "RPRT " + RPRT_EINVAL + "\n";
         }
-        // FTX-1 supports voice memory playback via PB command
-        // PBn; plays memory n (1-5)
         try {
             int mem = Integer.parseInt(args.trim());
             if (mem < 1 || mem > 5) {
                 return "RPRT " + RPRT_EINVAL + "\n";
             }
-            rig.sendRawCommand("PB" + mem);
+            synchronized (rigLock) {
+                rig.sendRawCommand("PB" + mem);
+            }
             return "RPRT " + RPRT_OK + "\n";
         } catch (NumberFormatException e) {
             return "RPRT " + RPRT_EINVAL + "\n";
@@ -817,10 +798,11 @@ public class RigctlCommandHandler {
     /**
      * Halts rig operations (emergency stop).
      */
-    private String halt() throws CatException {
-        // Turn off PTT as emergency stop
+    private String halt() {
         try {
-            rig.setPtt(false);
+            synchronized (rigLock) {
+                rig.setPtt(false);
+            }
         } catch (CatException e) {
             // Ignore errors
         }
@@ -834,32 +816,12 @@ public class RigctlCommandHandler {
         if (!args.isEmpty()) {
             try {
                 int ms = Integer.parseInt(args.trim());
-                Thread.sleep(Math.min(ms, 5000));  // Max 5 second pause
+                Thread.sleep(Math.min(ms, 5000));
             } catch (NumberFormatException | InterruptedException e) {
-                // Ignore
+                Thread.currentThread().interrupt();
             }
         }
         return "RPRT " + RPRT_OK + "\n";
-    }
-
-    /**
-     * Maps OperatingMode to Hamlib mode name.
-     */
-    private String mapModeToHamlib(OperatingMode mode) {
-        switch (mode) {
-            case LSB: return "LSB";
-            case USB: return "USB";
-            case CW_U: return "CW";
-            case CW_L: return "CWR";
-            case AM: return "AM";
-            case FM: return "FM";
-            case RTTY_L: return "RTTY";
-            case RTTY_U: return "RTTYR";
-            case DATA_L: return "PKTLSB";
-            case DATA_U: return "PKTUSB";
-            case DATA_FM: return "PKTFM";
-            default: return mode.name();
-        }
     }
 
     /**
@@ -867,7 +829,10 @@ public class RigctlCommandHandler {
      * This is the main command WSJT-X uses to discover rig capabilities.
      */
     private String dumpState() {
-        HeadType headType = rig.getHeadType();
+        HeadType headType;
+        synchronized (rigLock) {
+            headType = rig.getHeadType();
+        }
         double minFreq = 1800000;   // 1.8 MHz (160m)
         double maxFreq = 54000000;  // 54 MHz (6m)
 

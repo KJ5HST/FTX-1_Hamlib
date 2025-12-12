@@ -23,19 +23,19 @@ This allows any Hamlib-compatible application to control the FTX-1 via the stand
 mvn clean package
 ```
 
-This creates an uber-jar at `target/ftx1-hamlib-1.0.1.jar` with all dependencies included.
+This creates an uber-jar at `target/ftx1-hamlib-1.0.3.jar` with all dependencies included.
 
 ## Usage
 
 ### GUI Mode (Default)
 
 ```bash
-java -jar ftx1-hamlib-1.0.1.jar
+java -jar ftx1-hamlib-1.0.3.jar
 ```
 
 Or explicitly:
 ```bash
-java -jar ftx1-hamlib-1.0.1.jar --gui
+java -jar ftx1-hamlib-1.0.3.jar --gui
 ```
 
 The GUI provides:
@@ -94,7 +94,7 @@ Select **Default (System)** to use your operating system's language setting.
 ### Interactive Mode
 
 ```bash
-java -jar ftx1-hamlib-1.0.1.jar -r /dev/cu.SLAB_USBtoUART
+java -jar ftx1-hamlib-1.0.3.jar -r /dev/cu.SLAB_USBtoUART
 ```
 
 This opens an interactive prompt where you can enter rigctl commands directly.
@@ -102,7 +102,7 @@ This opens an interactive prompt where you can enter rigctl commands directly.
 ### Daemon Mode
 
 ```bash
-java -jar ftx1-hamlib-1.0.1.jar -r /dev/cu.SLAB_USBtoUART -t 4532
+java -jar ftx1-hamlib-1.0.3.jar -r /dev/cu.SLAB_USBtoUART -t 4532
 ```
 
 This starts a TCP server on port 4532 that accepts rigctld protocol connections.
@@ -149,7 +149,7 @@ This starts a TCP server on port 4532 that accepts rigctld protocol connections.
 
 Start the daemon:
 ```bash
-java -jar ftx1-hamlib-1.0.1.jar -r /dev/cu.SLAB_USBtoUART -t 4532
+java -jar ftx1-hamlib-1.0.3.jar -r /dev/cu.SLAB_USBtoUART -t 4532
 ```
 
 Connect with rigctl:
@@ -160,8 +160,8 @@ rigctl -m 2 -r localhost:4532
 ### Interactive session
 
 ```
-$ java -jar ftx1-hamlib-1.0.1.jar -r /dev/cu.SLAB_USBtoUART
-FTX-1 Hamlib 1.0.1 - Interactive Mode
+$ java -jar ftx1-hamlib-1.0.3.jar -r /dev/cu.SLAB_USBtoUART
+FTX-1 Hamlib 1.0.3 - Interactive Mode
 Type 'help' for commands, 'quit' to exit
 
 Rig command: f
@@ -198,10 +198,10 @@ Rig command: quit
 
 ## Head Type Support
 
-FTX-1 Hamlib automatically detects the connected head type:
-- **Field Head (Battery)** - 6W max power
-- **Field Head (12V)** - 10W max power
-- **SPA-1/Optima** - 100W max power
+FTX-1 Hamlib automatically detects the connected head type based on radio ID:
+- **Field Head (ID 0840)** - 0.5-10W (battery auto-clamps to 6W max)
+- **SPA-1 (ID 0841)** - 5-100W with internal antenna tuner
+- **SPA-1 Optima (ID 0842)** - 5-200W with internal antenna tuner
 
 The `dump_caps` command shows the detected head type and power limits.
 

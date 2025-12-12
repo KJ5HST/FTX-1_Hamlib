@@ -34,7 +34,7 @@ import java.io.IOException;
  */
 public class JamlibFTX1 {
 
-    public static final String VERSION = "1.0.1";
+    public static final String VERSION = "1.0.3";
     public static final int DEFAULT_PORT = 4532;
     public static final int DEFAULT_BAUD = 38400;
 
@@ -255,35 +255,36 @@ public class JamlibFTX1 {
      * Run in interactive CLI mode (like rigctl).
      */
     private void runInteractive() throws IOException {
-        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
         RigctlCommandHandler handler = new RigctlCommandHandler(rig, verbose);
 
         System.out.println("Jamlib-FTX1 " + VERSION + " - Interactive Mode");
         System.out.println("Type 'help' for commands, 'quit' to exit");
         System.out.println();
 
-        String line;
-        while (true) {
-            System.out.print("Rig command: ");
-            System.out.flush();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {
+            String line;
+            while (true) {
+                System.out.print("Rig command: ");
+                System.out.flush();
 
-            line = reader.readLine();
-            if (line == null) {
-                break;  // EOF
+                line = reader.readLine();
+                if (line == null) {
+                    break;  // EOF
+                }
+
+                line = line.trim();
+                if (line.isEmpty()) {
+                    continue;
+                }
+
+                if (line.equalsIgnoreCase("quit") || line.equalsIgnoreCase("q") ||
+                    line.equalsIgnoreCase("exit")) {
+                    break;
+                }
+
+                String response = handler.handleCommand(line);
+                System.out.println(response);
             }
-
-            line = line.trim();
-            if (line.isEmpty()) {
-                continue;
-            }
-
-            if (line.equalsIgnoreCase("quit") || line.equalsIgnoreCase("q") ||
-                line.equalsIgnoreCase("exit")) {
-                break;
-            }
-
-            String response = handler.handleCommand(line);
-            System.out.println(response);
         }
     }
 

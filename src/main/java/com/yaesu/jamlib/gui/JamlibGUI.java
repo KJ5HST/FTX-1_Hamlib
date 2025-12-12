@@ -33,7 +33,7 @@ import java.util.Locale;
  */
 public class JamlibGUI extends JFrame {
 
-    private static final String VERSION = "1.0.1";
+    private static final String VERSION = "1.0.3";
     private static final int DEFAULT_TCP_PORT = 4532;
     private static final int DEFAULT_BAUD = 38400;
 
@@ -774,18 +774,19 @@ public class JamlibGUI extends JFrame {
             );
             pb.redirectErrorStream(true);
             Process p = pb.start();
-            java.io.BufferedReader reader = new java.io.BufferedReader(
-                new java.io.InputStreamReader(p.getInputStream())
-            );
-            String line;
-            while ((line = reader.readLine()) != null) {
-                line = line.trim();
-                if (line.toUpperCase().startsWith("COM")) {
-                    ports.add(line.toUpperCase());
+            try (var reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(p.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    line = line.trim();
+                    if (line.toUpperCase().startsWith("COM")) {
+                        ports.add(line.toUpperCase());
+                    }
                 }
+            } finally {
+                p.waitFor();
+                p.destroyForcibly();  // Ensure process is cleaned up
             }
-            p.waitFor();
-            reader.close();
         } catch (Exception e) {
             // PowerShell method failed, fall back to probing
         }
@@ -794,25 +795,33 @@ public class JamlibGUI extends JFrame {
         if (ports.isEmpty()) {
             for (int i = 1; i <= 20; i++) {
                 String port = "COM" + i;
+                Process p = null;
                 try {
-                    // Try to check if port exists via registry
                     ProcessBuilder pb = new ProcessBuilder(
                         "cmd", "/c", "mode " + port + " 2>nul"
                     );
-                    Process p = pb.start();
+                    p = pb.start();
+                    // Consume streams to prevent blocking
+                    try (var is = p.getInputStream(); var es = p.getErrorStream()) {
+                        is.readAllBytes();
+                        es.readAllBytes();
+                    }
                     int exitCode = p.waitFor();
                     if (exitCode == 0) {
                         ports.add(port);
                     }
                 } catch (Exception e) {
                     // Ignore
+                } finally {
+                    if (p != null) {
+                        p.destroyForcibly();
+                    }
                 }
             }
         }
 
         // Method 3: If still empty, add common defaults
         if (ports.isEmpty()) {
-            // Just add COM1-COM10 as options
             for (int i = 1; i <= 10; i++) {
                 ports.add("COM" + i);
             }
@@ -882,10 +891,13 @@ public class JamlibGUI extends JFrame {
         } catch (Exception e) {
             // Ignore errors during disconnect
         }
-        // Disable listener mode
-        rig.getConnection().setListenerMode(false);
-        // Remove listener
-        rig.getConnection().removeDataListener(autoInfoListener);
+
+        // Disable listener mode and remove listener (with null checks)
+        var connection = rig.getConnection();
+        if (connection != null) {
+            connection.setListenerMode(false);
+            connection.removeDataListener(autoInfoListener);
+        }
     }
 
     // Listener for auto-info data from the radio
@@ -1003,12 +1015,13 @@ public class JamlibGUI extends JFrame {
                 break;
 
             case "PC": // Power control
-                // Format: PCxNNN where x=head/band indicator, NNN=power in watts
-                // Example: PC2050 = 50W, PC2100 = 100W
+                // Format: PC1xxx (Field Head) or PC2xxx (SPA-1)
+                // Field Head can have decimal: PC10.5 = 0.5W, PC110 = 10W
+                // SPA-1 uses integer: PC2050 = 50W, PC2100 = 100W
                 try {
-                    if (value.length() >= 3) {
-                        int powerWatts = Integer.parseInt(value.substring(1)); // Skip first digit
-                        powerLabel.setText(powerWatts + "W");
+                    if (value.length() >= 2) {
+                        double powerWatts = Double.parseDouble(value.substring(1)); // Skip first digit (head type)
+                        powerLabel.setText(formatPower(powerWatts));
                     }
                 } catch (NumberFormatException e) { }
                 break;
@@ -2418,7 +2431,7 @@ public class JamlibGUI extends JFrame {
 
             // Power
             double power = rig.getPower();
-            powerLabel.setText(String.format("%.0f W", power));
+            powerLabel.setText(formatPower(power));
 
             // S-Meter
             int smeter = rig.getSmeter();
@@ -2445,6 +2458,18 @@ public class JamlibGUI extends JFrame {
         if (smeter < -6) return "S8";
         if (smeter < 0) return "S9";
         return "S9+" + smeter + "dB";
+    }
+
+    /**
+     * Formats power value for display.
+     * Shows one decimal place for fractional watts, whole numbers otherwise.
+     */
+    private String formatPower(double power) {
+        if (power == Math.floor(power)) {
+            return String.format("%.0f W", power);
+        } else {
+            return String.format("%.1f W", power);
+        }
     }
 
     private void showAbout() {

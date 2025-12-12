@@ -127,24 +127,30 @@ public class RigctldServer {
 
     /**
      * Stop the server.
+     * Closes the server socket first to unblock accept(), then sets running=false.
      */
     public void stop() {
-        running = false;
+        // Close socket first to unblock the accept() call in the listener thread
+        ServerSocket socketToClose = serverSocket;
+        serverSocket = null;
 
-        if (serverSocket != null) {
+        if (socketToClose != null) {
             try {
-                serverSocket.close();
+                socketToClose.close();
             } catch (IOException e) {
                 // Ignore
             }
         }
+
+        // Now safe to set running=false after socket is closed
+        running = false;
 
         if (executor != null) {
             executor.shutdownNow();
             try {
                 executor.awaitTermination(5, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
-                // Ignore
+                Thread.currentThread().interrupt();
             }
         }
     }
