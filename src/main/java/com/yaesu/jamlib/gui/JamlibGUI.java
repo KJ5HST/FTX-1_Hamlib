@@ -12,6 +12,7 @@ import com.yaesu.ftx1.model.HeadType;
 import com.yaesu.ftx1.model.OperatingMode;
 import com.yaesu.ftx1.model.VFO;
 import com.yaesu.jamlib.RigctlCommandHandler;
+import com.yaesu.jamlib.i18n.Messages;
 import com.yaesu.jamlib.server.RigctlCommandListener;
 import com.yaesu.jamlib.server.RigctldServer;
 
@@ -24,6 +25,7 @@ import java.io.IOException;
 import java.text.DecimalFormat;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * GUI for Jamlib-FTX1 Hamlib daemon.
@@ -41,6 +43,7 @@ public class JamlibGUI extends JFrame {
     private RigctlCommandHandler commandHandler;
     private boolean connected = false;
     private boolean daemonRunning = false;
+    private String connectedPort = null;  // Track connected port for checkmark display
 
     // UI Components - Connection
     private JComboBox<String> portCombo;
@@ -67,6 +70,9 @@ public class JamlibGUI extends JFrame {
     private JLabel pttLabel;
     private JLabel powerLabel;
     private JLabel smeterLabel;
+    private JLabel swrLabel;
+    private JLabel alcLabel;
+    private JLabel compLabel;
 
     // UI Components - Command
     private JTextField commandField;
@@ -85,7 +91,7 @@ public class JamlibGUI extends JFrame {
     private boolean activeVfoIsB = false;
 
     public JamlibGUI() {
-        super("Jamlib-FTX1 - Hamlib Daemon");
+        super(Messages.get("app.title"));
         initializeUI();
         setupEventHandlers();
         scanSerialPorts();
@@ -120,20 +126,50 @@ public class JamlibGUI extends JFrame {
         JMenuBar menuBar = new JMenuBar();
 
         // File menu
-        JMenu fileMenu = new JMenu("File");
+        JMenu fileMenu = new JMenu(Messages.get("menu.file"));
         fileMenu.setMnemonic(KeyEvent.VK_F);
 
-        JMenuItem exitItem = new JMenuItem("Exit", KeyEvent.VK_X);
+        JMenuItem exitItem = new JMenuItem(Messages.get("menu.file.exit"), KeyEvent.VK_X);
         exitItem.addActionListener(e -> exitApplication());
         fileMenu.add(exitItem);
 
         menuBar.add(fileMenu);
 
+        // Settings menu
+        JMenu settingsMenu = new JMenu(Messages.get("menu.settings"));
+        settingsMenu.setMnemonic(KeyEvent.VK_S);
+
+        // Language submenu - dynamically built from available locales
+        JMenu languageMenu = new JMenu(Messages.get("menu.settings.language"));
+        ButtonGroup langGroup = new ButtonGroup();
+        Locale currentLocale = Messages.getLocale();
+        boolean usingDefault = Messages.isUsingDefault();
+
+        // Add "Default (System)" option at top
+        JRadioButtonMenuItem defaultItem = new JRadioButtonMenuItem(Messages.get("lang.default"));
+        defaultItem.setSelected(usingDefault);
+        defaultItem.addActionListener(e -> resetToDefaultLanguage());
+        langGroup.add(defaultItem);
+        languageMenu.add(defaultItem);
+        languageMenu.addSeparator();
+
+        for (Locale locale : Messages.getAvailableLocales()) {
+            String langKey = "lang." + locale.getLanguage();
+            JRadioButtonMenuItem langItem = new JRadioButtonMenuItem(Messages.get(langKey));
+            langItem.setSelected(!usingDefault && currentLocale.getLanguage().equals(locale.getLanguage()));
+            langItem.addActionListener(e -> changeLanguage(locale));
+            langGroup.add(langItem);
+            languageMenu.add(langItem);
+        }
+
+        settingsMenu.add(languageMenu);
+        menuBar.add(settingsMenu);
+
         // Help menu
-        JMenu helpMenu = new JMenu("Help");
+        JMenu helpMenu = new JMenu(Messages.get("menu.help"));
         helpMenu.setMnemonic(KeyEvent.VK_H);
 
-        JMenuItem aboutItem = new JMenuItem("About", KeyEvent.VK_A);
+        JMenuItem aboutItem = new JMenuItem(Messages.get("menu.help.about"), KeyEvent.VK_A);
         aboutItem.addActionListener(e -> showAbout());
         helpMenu.add(aboutItem);
 
@@ -148,14 +184,14 @@ public class JamlibGUI extends JFrame {
 
         // Connection panel
         JPanel connectionPanel = new JPanel(new GridBagLayout());
-        connectionPanel.setBorder(new TitledBorder("Connection"));
+        connectionPanel.setBorder(new TitledBorder(Messages.get("connection.title")));
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(2, 5, 2, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
         // Port row
         gbc.gridx = 0; gbc.gridy = 0;
-        connectionPanel.add(new JLabel("Port:"), gbc);
+        connectionPanel.add(new JLabel(Messages.get("connection.port")), gbc);
 
         gbc.gridx = 1; gbc.weightx = 1.0;
         portCombo = new JComboBox<>();
@@ -164,14 +200,14 @@ public class JamlibGUI extends JFrame {
 
         gbc.gridx = 2; gbc.weightx = 0;
         refreshPortsButton = new JButton("\u21BB");  // Unicode refresh symbol
-        refreshPortsButton.setToolTipText("Refresh port list");
+        refreshPortsButton.setToolTipText(Messages.get("connection.refresh.tooltip"));
         refreshPortsButton.setMargin(new Insets(2, 6, 2, 6));
         refreshPortsButton.addActionListener(e -> scanSerialPorts());
         connectionPanel.add(refreshPortsButton, gbc);
 
         // Baud row
         gbc.gridx = 0; gbc.gridy = 1; gbc.weightx = 0;
-        connectionPanel.add(new JLabel("Baud:"), gbc);
+        connectionPanel.add(new JLabel(Messages.get("connection.baud")), gbc);
 
         gbc.gridx = 1; gbc.weightx = 1.0;
         baudCombo = new JComboBox<>(new Integer[]{4800, 9600, 19200, 38400, 57600, 115200});
@@ -181,8 +217,8 @@ public class JamlibGUI extends JFrame {
         // Connect button and status
         gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 2;
         JPanel connectPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        connectButton = new JButton("Connect");
-        connectionStatus = new JLabel("Disconnected");
+        connectButton = new JButton(Messages.get("connection.connect"));
+        connectionStatus = new JLabel(Messages.get("connection.status.disconnected"));
         connectionStatus.setForeground(Color.RED);
         connectPanel.add(connectButton);
         connectPanel.add(connectionStatus);
@@ -192,14 +228,14 @@ public class JamlibGUI extends JFrame {
 
         // Daemon panel
         JPanel daemonPanel = new JPanel(new GridBagLayout());
-        daemonPanel.setBorder(new TitledBorder("Hamlib"));
+        daemonPanel.setBorder(new TitledBorder(Messages.get("hamlib.title")));
         gbc = new GridBagConstraints();
         gbc.insets = new Insets(2, 5, 2, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
         // TCP Port row
         gbc.gridx = 0; gbc.gridy = 0;
-        daemonPanel.add(new JLabel("TCP Port:"), gbc);
+        daemonPanel.add(new JLabel(Messages.get("hamlib.tcpport")), gbc);
 
         gbc.gridx = 1; gbc.weightx = 1.0;
         tcpPortSpinner = new JSpinner(new SpinnerNumberModel(DEFAULT_TCP_PORT, 1024, 65535, 1));
@@ -211,9 +247,9 @@ public class JamlibGUI extends JFrame {
         // Daemon button and status
         gbc.gridx = 0; gbc.gridy = 1; gbc.gridwidth = 2;
         JPanel daemonControlPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        daemonButton = new JButton("Start Hamlib");
+        daemonButton = new JButton(Messages.get("hamlib.start"));
         daemonButton.setEnabled(false);
-        daemonStatus = new JLabel("Stopped");
+        daemonStatus = new JLabel(Messages.get("hamlib.status.stopped"));
         daemonStatus.setForeground(Color.GRAY);
         daemonControlPanel.add(daemonButton);
         daemonControlPanel.add(daemonStatus);
@@ -221,7 +257,7 @@ public class JamlibGUI extends JFrame {
 
         // Clients label
         gbc.gridy = 2;
-        JLabel clientsLabel = new JLabel("Compatible with rigctl -m 2 -r localhost:" + DEFAULT_TCP_PORT);
+        JLabel clientsLabel = new JLabel(Messages.get("hamlib.compatible", DEFAULT_TCP_PORT));
         clientsLabel.setFont(clientsLabel.getFont().deriveFont(Font.ITALIC, 10f));
         daemonPanel.add(clientsLabel, gbc);
 
@@ -242,11 +278,11 @@ public class JamlibGUI extends JFrame {
 
         // Command panel tab
         JPanel commandPanel = createCommandPanel();
-        tabbedPane.addTab("Commands", commandPanel);
+        tabbedPane.addTab(Messages.get("tab.commands"), commandPanel);
 
         // Radio Data tab
         JPanel commMonitorPanel = createCommMonitorPanel();
-        tabbedPane.addTab("Radio Data", commMonitorPanel);
+        tabbedPane.addTab(Messages.get("tab.radiodata"), commMonitorPanel);
 
         // Split pane
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, statusPanel, tabbedPane);
@@ -265,19 +301,19 @@ public class JamlibGUI extends JFrame {
         // Control panel at top - use WrapLayout for better resizing
         JPanel controlPanel = new JPanel(new WrapLayout(FlowLayout.LEFT, 10, 5));
 
-        monitorEnabledCheckbox = new JCheckBox("Enable Monitoring");
+        monitorEnabledCheckbox = new JCheckBox(Messages.get("monitor.enable"));
         monitorEnabledCheckbox.addActionListener(e -> {
             monitorEnabled = monitorEnabledCheckbox.isSelected();
         });
         controlPanel.add(monitorEnabledCheckbox);
 
-        showTimestampCheckbox = new JCheckBox("Show Timestamps", true);
+        showTimestampCheckbox = new JCheckBox(Messages.get("monitor.timestamps"), true);
         showTimestampCheckbox.addActionListener(e -> {
             showTimestamps = showTimestampCheckbox.isSelected();
         });
         controlPanel.add(showTimestampCheckbox);
 
-        JButton clearButton = new JButton("Clear");
+        JButton clearButton = new JButton(Messages.get("commands.clear"));
         clearButton.addActionListener(e -> commMonitorArea.setText(""));
         controlPanel.add(clearButton);
 
@@ -299,7 +335,7 @@ public class JamlibGUI extends JFrame {
 
         // Legend at bottom
         JPanel legendPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        legendPanel.add(new JLabel("TX = Sent to radio  |  RX = Received from radio"));
+        legendPanel.add(new JLabel(Messages.get("monitor.legend")));
         panel.add(legendPanel, BorderLayout.SOUTH);
 
         return panel;
@@ -307,16 +343,16 @@ public class JamlibGUI extends JFrame {
 
     private JPanel createStatusPanel() {
         JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(new TitledBorder("Radio Status"));
+        panel.setBorder(new TitledBorder(Messages.get("status.title")));
 
         JPanel mainPanel = new JPanel();
         mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
         mainPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
-        // Radio row
+        // Radio row - two lines: "Yaesu FTX-1" and head type
         JPanel configPanel = new JPanel(new GridLayout(1, 2, 5, 2));
-        configPanel.add(new JLabel("Radio:"));
-        headTypeLabel = new JLabel("--");
+        configPanel.add(new JLabel(Messages.get("status.radio")));
+        headTypeLabel = new JLabel("<html>--<br>&nbsp;</html>");
         headTypeLabel.setFont(headTypeLabel.getFont().deriveFont(Font.BOLD));
         configPanel.add(headTypeLabel);
         mainPanel.add(configPanel);
@@ -325,14 +361,14 @@ public class JamlibGUI extends JFrame {
 
         // VFO-A section
         JPanel vfoAPanel = new JPanel(new GridLayout(0, 2, 5, 2));
-        vfoAPanel.setBorder(new TitledBorder("VFO-A"));
-        vfoAPanel.add(new JLabel("Frequency:"));
+        vfoAPanel.setBorder(new TitledBorder(Messages.get("status.vfoa")));
+        vfoAPanel.add(new JLabel(Messages.get("status.frequency")));
         freqLabelA = new JLabel("--");
         freqLabelA.setFont(new Font(Font.MONOSPACED, Font.BOLD, 12));
         freqLabelA.setForeground(new Color(0, 100, 0));
         vfoAPanel.add(freqLabelA);
-        vfoAPanel.add(new JLabel("Mode:"));
-        modeLabelA = new JLabel("--");
+        vfoAPanel.add(new JLabel(Messages.get("status.mode")));
+        modeLabelA = new JLabel(Messages.get("status.placeholder"));
         modeLabelA.setFont(modeLabelA.getFont().deriveFont(Font.BOLD));
         vfoAPanel.add(modeLabelA);
         mainPanel.add(vfoAPanel);
@@ -341,14 +377,14 @@ public class JamlibGUI extends JFrame {
 
         // VFO-B section
         JPanel vfoBPanel = new JPanel(new GridLayout(0, 2, 5, 2));
-        vfoBPanel.setBorder(new TitledBorder("VFO-B"));
-        vfoBPanel.add(new JLabel("Frequency:"));
-        freqLabelB = new JLabel("--");
+        vfoBPanel.setBorder(new TitledBorder(Messages.get("status.vfob")));
+        vfoBPanel.add(new JLabel(Messages.get("status.frequency")));
+        freqLabelB = new JLabel(Messages.get("status.placeholder"));
         freqLabelB.setFont(new Font(Font.MONOSPACED, Font.BOLD, 12));
         freqLabelB.setForeground(new Color(0, 100, 0));
         vfoBPanel.add(freqLabelB);
-        vfoBPanel.add(new JLabel("Mode:"));
-        modeLabelB = new JLabel("--");
+        vfoBPanel.add(new JLabel(Messages.get("status.mode")));
+        modeLabelB = new JLabel(Messages.get("status.placeholder"));
         modeLabelB.setFont(modeLabelB.getFont().deriveFont(Font.BOLD));
         vfoBPanel.add(modeLabelB);
         mainPanel.add(vfoBPanel);
@@ -357,23 +393,35 @@ public class JamlibGUI extends JFrame {
 
         // Common status section
         JPanel commonPanel = new JPanel(new GridLayout(0, 2, 5, 2));
-        commonPanel.add(new JLabel("Active VFO:"));
-        activeVfoLabel = new JLabel("--");
+        commonPanel.add(new JLabel(Messages.get("status.activevfo")));
+        activeVfoLabel = new JLabel(Messages.get("status.placeholder"));
         activeVfoLabel.setFont(activeVfoLabel.getFont().deriveFont(Font.BOLD));
         commonPanel.add(activeVfoLabel);
 
-        commonPanel.add(new JLabel("PTT:"));
-        pttLabel = new JLabel("RX");
+        commonPanel.add(new JLabel(Messages.get("status.ptt")));
+        pttLabel = new JLabel(Messages.get("status.ptt.rx"));
         pttLabel.setForeground(Color.GRAY);
         commonPanel.add(pttLabel);
 
-        commonPanel.add(new JLabel("Power:"));
-        powerLabel = new JLabel("--");
+        commonPanel.add(new JLabel(Messages.get("status.power")));
+        powerLabel = new JLabel(Messages.get("status.placeholder"));
         commonPanel.add(powerLabel);
 
-        commonPanel.add(new JLabel("S-Meter:"));
+        commonPanel.add(new JLabel(Messages.get("status.smeter")));
         smeterLabel = new JLabel("--");
         commonPanel.add(smeterLabel);
+
+        commonPanel.add(new JLabel(Messages.get("status.swr")));
+        swrLabel = new JLabel("--");
+        commonPanel.add(swrLabel);
+
+        commonPanel.add(new JLabel(Messages.get("status.alc")));
+        alcLabel = new JLabel("--");
+        commonPanel.add(alcLabel);
+
+        commonPanel.add(new JLabel(Messages.get("status.comp")));
+        compLabel = new JLabel("--");
+        commonPanel.add(compLabel);
 
         mainPanel.add(commonPanel);
 
@@ -382,109 +430,53 @@ public class JamlibGUI extends JFrame {
         return panel;
     }
 
-    // CAT command list - format: "Description (CMD)"
-    private static final String[] CAT_COMMANDS = {
-            "-- Select CAT Command --",
-            "VFO-A to VFO-B (AB)",
-            "Antenna Tuner Control (AC)",
-            "AF Gain (AG)",
-            "Auto Information (AI)",
-            "VFO-B to VFO-A (BA)",
-            "Auto Notch / DNF (BC)",
-            "Band Down (BD)",
-            "Break-In (BI)",
-            "Manual Notch (BP)",
-            "Band Select (BS)",
-            "Band Up (BU)",
-            "Clarifier / RIT/XIT (CF)",
-            "CTCSS Tone Number (CN)",
-            "Contour (CO)",
-            "CW Spot (CS)",
-            "CTCSS (CT)",
-            "LCD Contrast/Dimmer (DA)",
-            "DCS Code (DC)",
-            "Microphone Down (DN)",
-            "Date/Time (DT)",
-            "VFO-A Frequency (FA)",
-            "VFO-B Frequency (FB)",
-            "Filter Number (FN)",
-            "Function RX (FR)",
-            "Function TX (FT)",
-            "AGC Function (GT)",
-            "Identification (ID)",
-            "Information (IF)",
-            "IF Shift (IS)",
-            "Key Pitch (KP)",
-            "Keyer (KR)",
-            "Key Speed (KS)",
-            "CW Keying (KY)",
-            "Lock (LK)",
-            "Memory Channel (MC)",
-            "Operating Mode (MD)",
-            "Microphone Gain (MG)",
-            "Monitor Level (ML)",
-            "Memory Read (MR)",
-            "MOX (MX)",
-            "Narrow (NA)",
-            "Noise Blanker Level (NL)",
-            "Opposite Band Information (OI)",
-            "Offset / Repeater Shift (OS)",
-            "Preamp/IPO (PA)",
-            "Power Control (PC)",
-            "Speech Processor Level (PL)",
-            "Speech Processor (PR)",
-            "Power Switch (PS)",
-            "RF Attenuator (RA)",
-            "RF Gain (RG)",
-            "RIT Information (RI)",
-            "Noise Reduction / DNR Level (RL)",
-            "Read Meter (RM)",
-            "Scan (SC)",
-            "Semi Break-In Delay Time (SD)",
-            "Width/IF Shift (SH)",
-            "S-Meter (SM)",
-            "Squelch Level (SQ)",
-            "Split (ST)",
-            "Swap VFO (SV)",
-            "TX Watch (TS)",
-            "TX Set (TX)",
-            "Microphone Up (UP)",
-            "VOX Delay Time (VD)",
-            "Firmware Version (VE)",
-            "VOX Gain (VG)",
-            "VFO/Memory Channel (VM)",
-            "VFO Select (VS)",
-            "VOX (VX)",
-            "Zero In (ZI)"
+    // CAT command keys - used to build localized command list
+    private static final String[] CAT_COMMAND_KEYS = {
+            "cat.ab", "cat.ac", "cat.ag", "cat.ai", "cat.ba", "cat.bc", "cat.bd", "cat.bi",
+            "cat.bp", "cat.bs", "cat.bu", "cat.cf", "cat.cn", "cat.co", "cat.cs", "cat.ct",
+            "cat.da", "cat.dc", "cat.dn", "cat.dt", "cat.fa", "cat.fb", "cat.fn", "cat.fr",
+            "cat.ft", "cat.gt", "cat.id", "cat.if", "cat.is", "cat.ks", "cat.ky", "cat.lk",
+            "cat.lm", "cat.ma", "cat.mc", "cat.md", "cat.mg", "cat.ml", "cat.mr", "cat.ms",
+            "cat.mw", "cat.mx", "cat.nb", "cat.nl", "cat.nr", "cat.oa", "cat.ob", "cat.oi",
+            "cat.os", "cat.pa", "cat.pb", "cat.pc", "cat.pl", "cat.pr", "cat.ps", "cat.qr",
+            "cat.qs", "cat.ra", "cat.rc", "cat.rd", "cat.rg", "cat.ri", "cat.rl", "cat.rm",
+            "cat.rs", "cat.rt", "cat.ru", "cat.sc", "cat.sd", "cat.sh", "cat.sm", "cat.sq",
+            "cat.ss", "cat.st", "cat.sv", "cat.ts", "cat.tx", "cat.ty", "cat.ud", "cat.up",
+            "cat.vd", "cat.vg", "cat.vm", "cat.vs", "cat.vx", "cat.xt"
     };
 
-    // Hamlib command list - format: "Description (cmd)"
-    private static final String[] HAMLIB_COMMANDS = {
-            "-- Select Hamlib Command --",
-            "Get Frequency (f)",
-            "Set Frequency in Hz (F FREQ)",
-            "Get Mode (m)",
-            "Set Mode (M MODE 0)",
-            "Get VFO (v)",
-            "Set VFO (V VFOA|VFOB)",
-            "Get PTT (t)",
-            "Set PTT (T 0|1)",
-            "Get Split (s)",
-            "Set Split (S 0|1 VFOB)",
-            "Get RF Power Level (l RFPOWER)",
-            "Get AF Gain (l AF)",
-            "Get Squelch (l SQL)",
-            "Get S-Meter in dB (l STRENGTH)",
-            "Get SWR (l SWR)",
-            "Set RF Power 0-1 (L RFPOWER 0.5)",
-            "Set AF Gain 0-1 (L AF 0.5)",
-            "Set Squelch 0-1 (L SQL 0.5)",
-            "Get Lock Status (u LOCK)",
-            "Set Lock (U LOCK 0|1)",
-            "Get Radio Info (_)",
-            "Dump Capabilities (1)",
-            "Send Raw CAT Command (w CMD;)"
+    // Hamlib command keys - used to build localized command list
+    private static final String[] HAMLIB_COMMAND_KEYS = {
+            "hamlib.f", "hamlib.F", "hamlib.m", "hamlib.M", "hamlib.v", "hamlib.V",
+            "hamlib.t", "hamlib.T", "hamlib.s", "hamlib.S", "hamlib.l_rfpower", "hamlib.l_af",
+            "hamlib.l_sql", "hamlib.l_strength", "hamlib.l_swr", "hamlib.L_rfpower",
+            "hamlib.L_af", "hamlib.L_sql", "hamlib.u_lock", "hamlib.U_lock",
+            "hamlib.info", "hamlib.caps", "hamlib.raw"
     };
+
+    /**
+     * Builds localized CAT commands array.
+     */
+    private String[] getCatCommands() {
+        String[] commands = new String[CAT_COMMAND_KEYS.length + 1];
+        commands[0] = Messages.get("commands.cat.select");
+        for (int i = 0; i < CAT_COMMAND_KEYS.length; i++) {
+            commands[i + 1] = Messages.get(CAT_COMMAND_KEYS[i]);
+        }
+        return commands;
+    }
+
+    /**
+     * Builds localized Hamlib commands array.
+     */
+    private String[] getHamlibCommands() {
+        String[] commands = new String[HAMLIB_COMMAND_KEYS.length + 1];
+        commands[0] = Messages.get("commands.hamlib.select");
+        for (int i = 0; i < HAMLIB_COMMAND_KEYS.length; i++) {
+            commands[i + 1] = Messages.get(HAMLIB_COMMAND_KEYS[i]);
+        }
+        return commands;
+    }
 
     // Track which command mode is active
     private boolean catModeSelected = true;
@@ -493,15 +485,15 @@ public class JamlibGUI extends JFrame {
 
     private JPanel createCommandPanel() {
         JPanel panel = new JPanel(new BorderLayout(5, 5));
-        panel.setBorder(new TitledBorder("Commands"));
+        panel.setBorder(new TitledBorder(Messages.get("commands.title")));
 
         // Top panel with radio buttons and dropdown
         JPanel topPanel = new JPanel(new BorderLayout(5, 0));
 
         // Radio buttons to switch between CAT and Hamlib
         JPanel radioPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-        catRadio = new JRadioButton("CAT", true);
-        hamlibRadio = new JRadioButton("Hamlib", false);
+        catRadio = new JRadioButton(Messages.get("commands.cat"), true);
+        hamlibRadio = new JRadioButton(Messages.get("commands.hamlib"), false);
         ButtonGroup commandGroup = new ButtonGroup();
         commandGroup.add(catRadio);
         commandGroup.add(hamlibRadio);
@@ -520,7 +512,7 @@ public class JamlibGUI extends JFrame {
         topPanel.add(radioPanel, BorderLayout.WEST);
 
         // Command dropdown
-        quickCommandCombo = new JComboBox<>(CAT_COMMANDS);
+        quickCommandCombo = new JComboBox<>(getCatCommands());
         quickCommandCombo.addActionListener(e -> handleCommandSelection());
         topPanel.add(quickCommandCombo, BorderLayout.CENTER);
 
@@ -529,7 +521,7 @@ public class JamlibGUI extends JFrame {
         // Command input
         JPanel inputPanel = new JPanel(new BorderLayout(5, 0));
         inputPanel.setBorder(BorderFactory.createEmptyBorder(5, 0, 5, 0));
-        inputPanel.add(new JLabel("Command:"), BorderLayout.WEST);
+        inputPanel.add(new JLabel(Messages.get("commands.input")), BorderLayout.WEST);
         commandField = new JTextField();
         commandField.setEnabled(false);
         commandField.addActionListener(e -> sendCurrentCommand());
@@ -537,11 +529,11 @@ public class JamlibGUI extends JFrame {
 
         // Button panel with Send and Clear
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
-        sendButton = new JButton("Send");
+        sendButton = new JButton(Messages.get("commands.send"));
         sendButton.setEnabled(false);
         sendButton.addActionListener(e -> sendCurrentCommand());
         buttonPanel.add(sendButton);
-        JButton clearButton = new JButton("Clear");
+        JButton clearButton = new JButton(Messages.get("commands.clear"));
         clearButton.addActionListener(e -> responseArea.setText(""));
         buttonPanel.add(clearButton);
         inputPanel.add(buttonPanel, BorderLayout.EAST);
@@ -568,7 +560,7 @@ public class JamlibGUI extends JFrame {
      */
     private void updateCommandDropdown() {
         quickCommandCombo.removeAllItems();
-        String[] commands = catModeSelected ? CAT_COMMANDS : HAMLIB_COMMANDS;
+        String[] commands = catModeSelected ? getCatCommands() : getHamlibCommands();
         for (String cmd : commands) {
             quickCommandCombo.addItem(cmd);
         }
@@ -694,7 +686,7 @@ public class JamlibGUI extends JFrame {
         panel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
         // Status bar
-        JLabel statusBar = new JLabel("Ready");
+        JLabel statusBar = new JLabel(Messages.get("status.ready"));
         statusBar.setBorder(BorderFactory.createLoweredBevelBorder());
         panel.add(statusBar, BorderLayout.CENTER);
 
@@ -716,8 +708,11 @@ public class JamlibGUI extends JFrame {
     }
 
     private void scanSerialPorts() {
-        // Save current selection
+        // Save current selection (strip checkmark if present)
         String currentSelection = (String) portCombo.getSelectedItem();
+        if (currentSelection != null && currentSelection.startsWith("\u2713 ")) {
+            currentSelection = currentSelection.substring(2);
+        }
 
         portCombo.removeAllItems();
 
@@ -733,7 +728,12 @@ public class JamlibGUI extends JFrame {
         }
 
         for (String port : ports) {
-            portCombo.addItem(port);
+            // Add checkmark to connected port
+            if (connectedPort != null && port.equals(connectedPort)) {
+                portCombo.addItem("\u2713 " + port);
+            } else {
+                portCombo.addItem(port);
+            }
         }
 
         // If no ports found, add platform-appropriate defaults
@@ -749,8 +749,10 @@ public class JamlibGUI extends JFrame {
 
         // Restore previous selection if it still exists
         if (currentSelection != null && !currentSelection.isEmpty()) {
+            String checkmarkedSelection = "\u2713 " + currentSelection;
             for (int i = 0; i < portCombo.getItemCount(); i++) {
-                if (currentSelection.equals(portCombo.getItemAt(i))) {
+                String item = portCombo.getItemAt(i);
+                if (currentSelection.equals(item) || checkmarkedSelection.equals(item)) {
                     portCombo.setSelectedIndex(i);
                     return;
                 }
@@ -1024,6 +1026,30 @@ public class JamlibGUI extends JFrame {
                 }
                 break;
 
+            case "RM": // Read Meter (SWR, ALC, COMP, etc.)
+                // Format: RMxyyy where x=meter type (1=ALC, 2=SWR, 3=COMP, 4=ID, 5=VDD), yyy=value
+                if (value.length() >= 4) {
+                    try {
+                        char meterType = value.charAt(0);
+                        int meterVal = Integer.parseInt(value.substring(1, 4));
+                        int percent = (meterVal * 100) / 255;
+                        switch (meterType) {
+                            case '1': // ALC
+                                alcLabel.setText(percent + "%");
+                                break;
+                            case '2': // SWR
+                                // Convert 0-255 to approximate SWR (1.0 to 3.0+)
+                                double swr = 1.0 + (meterVal * 2.0 / 255.0);
+                                swrLabel.setText(String.format("%.1f:1", swr));
+                                break;
+                            case '3': // COMP (compression)
+                                compLabel.setText(percent + "%");
+                                break;
+                        }
+                    } catch (NumberFormatException e) { }
+                }
+                break;
+
             case "FT": // TX VFO select (which VFO is used for transmit)
                 if (value.equals("0")) {
                     activeVfoIsB = false;
@@ -1083,10 +1109,16 @@ public class JamlibGUI extends JFrame {
         int baud = (Integer) baudCombo.getSelectedItem();
 
         if (port == null || port.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Please select a serial port",
-                    "Connection Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, Messages.get("connection.error.noport"),
+                    Messages.get("connection.error.title"), JOptionPane.ERROR_MESSAGE);
             return;
         }
+
+        // Strip checkmark prefix if present
+        if (port.startsWith("\u2713 ")) {
+            port = port.substring(2);
+        }
+        final String actualPort = port;
 
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
         connectButton.setEnabled(false);
@@ -1094,7 +1126,7 @@ public class JamlibGUI extends JFrame {
         SwingWorker<FTX1, Void> worker = new SwingWorker<>() {
             @Override
             protected FTX1 doInBackground() throws Exception {
-                return FTX1.connect(port, baud);
+                return FTX1.connect(actualPort, baud);
             }
 
             @Override
@@ -1106,10 +1138,11 @@ public class JamlibGUI extends JFrame {
                     rig = get();
                     commandHandler = new RigctlCommandHandler(rig, true);
                     connected = true;
+                    connectedPort = actualPort;
 
                     // Update UI
-                    connectButton.setText("Disconnect");
-                    connectionStatus.setText("Connected");
+                    connectButton.setText(Messages.get("connection.disconnect"));
+                    connectionStatus.setText(Messages.get("connection.status.connected"));
                     connectionStatus.setForeground(new Color(0, 128, 0));
                     daemonButton.setEnabled(true);
                     commandField.setEnabled(true);
@@ -1118,9 +1151,8 @@ public class JamlibGUI extends JFrame {
                     baudCombo.setEnabled(false);
                     refreshPortsButton.setEnabled(false);
 
-                    // Update status display
-                    HeadType headType = rig.getHeadType();
-                    headTypeLabel.setText(headType.getDisplayName());
+                    // Refresh port list to show checkmark
+                    scanSerialPorts();
 
                     // Populate radio status on connect
                     populateRadioStatus();
@@ -1128,12 +1160,12 @@ public class JamlibGUI extends JFrame {
                     // Enable auto-information mode
                     enableAutoInfo();
 
-                    appendResponse("Connected to FTX-1 on " + port);
+                    appendResponse(Messages.get("msg.connected", actualPort));
 
                 } catch (Exception ex) {
                     JOptionPane.showMessageDialog(JamlibGUI.this,
-                            "Connection failed: " + ex.getMessage(),
-                            "Connection Error", JOptionPane.ERROR_MESSAGE);
+                            Messages.get("connection.error.failed", ex.getMessage()),
+                            Messages.get("connection.error.title"), JOptionPane.ERROR_MESSAGE);
                 }
             }
         };
@@ -1156,11 +1188,12 @@ public class JamlibGUI extends JFrame {
         }
 
         connected = false;
+        connectedPort = null;
         commandHandler = null;
 
         // Update UI
-        connectButton.setText("Connect");
-        connectionStatus.setText("Disconnected");
+        connectButton.setText(Messages.get("connection.connect"));
+        connectionStatus.setText(Messages.get("connection.status.disconnected"));
         connectionStatus.setForeground(Color.RED);
         daemonButton.setEnabled(false);
         commandField.setEnabled(false);
@@ -1169,8 +1202,11 @@ public class JamlibGUI extends JFrame {
         baudCombo.setEnabled(true);
         refreshPortsButton.setEnabled(true);
 
+        // Refresh port list to remove checkmark
+        scanSerialPorts();
+
         // Clear status
-        headTypeLabel.setText("--");
+        headTypeLabel.setText("<html>--<br>&nbsp;</html>");
         freqLabelA.setText("--");
         modeLabelA.setText("--");
         freqLabelB.setText("--");
@@ -1180,9 +1216,12 @@ public class JamlibGUI extends JFrame {
         pttLabel.setForeground(Color.GRAY);
         powerLabel.setText("--");
         smeterLabel.setText("--");
+        swrLabel.setText("--");
+        alcLabel.setText("--");
+        compLabel.setText("--");
         activeVfoIsB = false;
 
-        appendResponse("Disconnected");
+        appendResponse(Messages.get("msg.disconnected"));
         appendResponse("");
     }
 
@@ -1203,19 +1242,19 @@ public class JamlibGUI extends JFrame {
             server.start();
             daemonRunning = true;
 
-            daemonButton.setText("Stop Hamlib");
-            daemonStatus.setText("Running on port " + port);
+            daemonButton.setText(Messages.get("hamlib.stop"));
+            daemonStatus.setText(Messages.get("hamlib.status.running", port));
             daemonStatus.setForeground(new Color(0, 128, 0));
             tcpPortSpinner.setEnabled(false);
 
-            appendResponse("Hamlib started on port " + port);
-            appendResponse("Clients can connect with: rigctl -m 2 -r localhost:" + port);
+            appendResponse(Messages.get("msg.hamlib.started", port));
+            appendResponse(Messages.get("msg.hamlib.connect", port));
             appendResponse("");
 
         } catch (IOException e) {
             JOptionPane.showMessageDialog(this,
-                    "Failed to start daemon: " + e.getMessage(),
-                    "Hamlib Error", JOptionPane.ERROR_MESSAGE);
+                    Messages.get("hamlib.error.start", e.getMessage()),
+                    Messages.get("hamlib.error.title"), JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -1226,12 +1265,12 @@ public class JamlibGUI extends JFrame {
         }
 
         daemonRunning = false;
-        daemonButton.setText("Start Hamlib");
-        daemonStatus.setText("Stopped");
+        daemonButton.setText(Messages.get("hamlib.start"));
+        daemonStatus.setText(Messages.get("hamlib.status.stopped"));
         daemonStatus.setForeground(Color.GRAY);
         tcpPortSpinner.setEnabled(true);
 
-        appendResponse("Hamlib stopped");
+        appendResponse(Messages.get("msg.hamlib.stopped"));
         appendResponse("");
     }
 
@@ -2336,6 +2375,16 @@ public class JamlibGUI extends JFrame {
         if (!connected || rig == null) return;
 
         try {
+            // Head type - display name may include "Yaesu FTX-1" prefix
+            HeadType headType = rig.getHeadType();
+            String displayName = headType.getDisplayName();
+            // Strip prefixes to get just the head type (e.g., "Field (12V)")
+            String headOnly = displayName
+                .replace("Yaesu FTX-1 ", "")
+                .replace("FTX-1 ", "")
+                .replace("Yaesu ", "");
+            headTypeLabel.setText("<html>Yaesu FTX-1<br>" + headOnly + "</html>");
+
             // VFO-A Frequency
             long freqA = rig.getFrequency(VFO.MAIN);
             freqLabelA.setText(formatFrequency(freqA) + " MHz");
@@ -2518,6 +2567,146 @@ public class JamlibGUI extends JFrame {
         if (monitorEnabled) {
             SwingUtilities.invokeLater(() -> logComm(direction, data));
         }
+    }
+
+    /**
+     * Changes the application language and rebuilds the UI.
+     */
+    private void changeLanguage(Locale locale) {
+        Messages.setLocale(locale);
+
+        // Save current selections before rebuilding
+        String selectedPort = (String) portCombo.getSelectedItem();
+        Integer selectedBaud = (Integer) baudCombo.getSelectedItem();
+
+        // Update window title
+        setTitle(Messages.get("app.title"));
+
+        // Rebuild menu bar
+        setJMenuBar(createMenuBar());
+
+        // Rebuild all panels
+        getContentPane().removeAll();
+
+        JPanel topPanel = createTopPanel();
+        JPanel centerPanel = createCenterPanel();
+        JPanel bottomPanel = createBottomPanel();
+
+        add(topPanel, BorderLayout.NORTH);
+        add(centerPanel, BorderLayout.CENTER);
+        add(bottomPanel, BorderLayout.SOUTH);
+
+        // Re-setup event handlers for new components
+        setupEventHandlers();
+
+        // Refresh port list and restore selection
+        scanSerialPorts();
+        if (selectedPort != null) {
+            portCombo.setSelectedItem(selectedPort);
+        }
+        if (selectedBaud != null) {
+            baudCombo.setSelectedItem(selectedBaud);
+        }
+
+        // Restore connection state
+        if (connected) {
+            connectionStatus.setText(Messages.get("connection.status.connected"));
+            connectionStatus.setForeground(new Color(0, 128, 0));
+            connectButton.setText(Messages.get("connection.disconnect"));
+            commandField.setEnabled(true);
+            sendButton.setEnabled(true);
+            daemonButton.setEnabled(true);
+
+            // Disable port selection while connected
+            portCombo.setEnabled(false);
+            baudCombo.setEnabled(false);
+            refreshPortsButton.setEnabled(false);
+
+            // Refresh radio status display
+            populateRadioStatus();
+        }
+
+        // Restore daemon state
+        if (daemonRunning) {
+            int port = (Integer) tcpPortSpinner.getValue();
+            daemonButton.setText(Messages.get("hamlib.stop"));
+            daemonStatus.setText(Messages.get("hamlib.status.running", port));
+            daemonStatus.setForeground(new Color(0, 128, 0));
+        }
+
+        // Revalidate and repaint
+        revalidate();
+        repaint();
+    }
+
+    /**
+     * Resets to system default language and rebuilds the UI.
+     */
+    private void resetToDefaultLanguage() {
+        Messages.resetToDefault();
+
+        // Save current selections before rebuilding
+        String selectedPort = (String) portCombo.getSelectedItem();
+        Integer selectedBaud = (Integer) baudCombo.getSelectedItem();
+
+        // Update window title
+        setTitle(Messages.get("app.title"));
+
+        // Rebuild menu bar
+        setJMenuBar(createMenuBar());
+
+        // Rebuild all panels
+        getContentPane().removeAll();
+
+        JPanel topPanel = createTopPanel();
+        JPanel centerPanel = createCenterPanel();
+        JPanel bottomPanel = createBottomPanel();
+
+        add(topPanel, BorderLayout.NORTH);
+        add(centerPanel, BorderLayout.CENTER);
+        add(bottomPanel, BorderLayout.SOUTH);
+
+        // Re-setup event handlers for new components
+        setupEventHandlers();
+
+        // Refresh port list and restore selection
+        scanSerialPorts();
+        if (selectedPort != null) {
+            portCombo.setSelectedItem(selectedPort);
+        }
+        if (selectedBaud != null) {
+            baudCombo.setSelectedItem(selectedBaud);
+        }
+
+        // Restore connection state
+        if (connected) {
+            connectionStatus.setText(Messages.get("connection.status.connected"));
+            connectionStatus.setForeground(new Color(0, 128, 0));
+            connectButton.setText(Messages.get("connection.disconnect"));
+            commandField.setEnabled(true);
+            sendButton.setEnabled(true);
+            daemonButton.setEnabled(true);
+
+            // Disable port selection while connected
+            portCombo.setEnabled(false);
+            baudCombo.setEnabled(false);
+            refreshPortsButton.setEnabled(false);
+
+            // Refresh radio status display
+            populateRadioStatus();
+        }
+
+        // Restore daemon state
+        if (daemonRunning) {
+            int port = (Integer) tcpPortSpinner.getValue();
+            daemonButton.setText(Messages.get("hamlib.stop"));
+            daemonStatus.setText(Messages.get("hamlib.status.running", port));
+            daemonStatus.setForeground(new Color(0, 128, 0));
+        }
+
+        // Revalidate and repaint
+        revalidate();
+        repaint();
     }
 
     public static void main(String[] args) {

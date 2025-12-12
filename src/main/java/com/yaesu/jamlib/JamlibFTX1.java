@@ -10,6 +10,7 @@ package com.yaesu.jamlib;
 import com.yaesu.ftx1.FTX1;
 import com.yaesu.ftx1.exception.CatConnectionException;
 import com.yaesu.jamlib.gui.JamlibGUI;
+import com.yaesu.jamlib.i18n.Messages;
 import com.yaesu.jamlib.server.RigctldServer;
 
 import javax.swing.SwingUtilities;

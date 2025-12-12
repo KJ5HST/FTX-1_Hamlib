@@ -10,7 +10,7 @@
     <packaging>jar</packaging>
 
     <name>FTX1-Hamlib</name>
-    <description>Hamlib-compatible daemon for FTX-1 using Java ftx1-cat library</description>
+    <description>Hamlib-compatible emulator for FTX-1 using Java ftx1-cat library</description>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>

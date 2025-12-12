@@ -1,12 +1,13 @@
-# FTX1-Hamlib
+# FTX-1 Hamlib
 
-Hamlib-compatible daemon for Yaesu FTX-1 using the Java ftx1-cat library.
+Hamlib-compatible emulator for Yaesu FTX-1 using the Java ftx1-cat library.
 
 ## Overview
 
-FTX1-Hamlib provides a rigctld-compatible interface for the Yaesu FTX-1 transceiver. It can run as:
+FTX-1 Hamlib provides a rigctld-compatible interface for the Yaesu FTX-1 transceiver. It can run as:
+- A graphical application with internationalization support (9 languages)
 - An interactive command-line tool (like rigctl)
-- A TCP daemon (like rigctld) for network control
+- A TCP server (like rigctld) for network control
 
 This allows any Hamlib-compatible application to control the FTX-1 via the standard rigctld protocol.
 
@@ -21,33 +22,34 @@ This allows any Hamlib-compatible application to control the FTX-1 via the stand
 mvn clean package
 ```
 
-This creates an uber-jar at `target/ftx1-hamlib-1.0.0-SNAPSHOT.jar` with all dependencies included.
+This creates an uber-jar at `target/ftx1-hamlib-1.0.1.jar` with all dependencies included.
 
 ## Usage
 
 ### GUI Mode (Default)
 
 ```bash
-java -jar ftx1-hamlib-1.0.0-SNAPSHOT.jar
+java -jar ftx1-hamlib-1.0.1.jar
 ```
 
 Or explicitly:
 ```bash
-java -jar ftx1-hamlib-1.0.0-SNAPSHOT.jar --gui
+java -jar ftx1-hamlib-1.0.1.jar --gui
 ```
 
 The GUI provides:
 - Connection management (serial port selection, baud rate, refresh button)
-- Daemon control (start/stop TCP server)
+- Hamlib emulator control (start/stop TCP server)
 - Real-time radio status (frequency, mode, VFO, PTT, power, S-meter)
 - Command input with quick-command dropdown
 - Quick controls (mode selector, PTT button, lock toggle)
 - Response log
 - **Communications Monitor** - Real-time view of CAT command traffic (TX/RX)
+- **Internationalization** - Support for 9 languages (see below)
 
 #### Communications Monitor
 
-The GUI includes a dedicated "Comm Monitor" tab that displays all CAT communications between FTX1-Hamlib and the FTX-1:
+The GUI includes a dedicated "Comm Monitor" tab that displays all CAT communications between FTX-1 Hamlib and the FTX-1:
 
 - **TX** - Commands sent to the radio
 - **RX** - Responses received from the radio
@@ -65,10 +67,33 @@ Example output:
 
 This is useful for debugging, learning CAT commands, or monitoring radio activity.
 
+#### Internationalization (i18n)
+
+The GUI supports 9 languages, sorted by amateur radio activity/popularity:
+
+| Language | Native Name |
+|----------|-------------|
+| English | English |
+| Japanese | 日本語 |
+| German | Deutsch |
+| Russian | Русский |
+| Spanish | Español |
+| Italian | Italiano |
+| French | Français |
+| Arabic | العربية |
+| Hebrew | עברית |
+
+To change the language:
+1. Go to **Settings → Language**
+2. Select your preferred language
+3. Restart the application
+
+Select **Default (System)** to use your operating system's language setting.
+
 ### Interactive Mode
 
 ```bash
-java -jar ftx1-hamlib-1.0.0-SNAPSHOT.jar -r /dev/cu.SLAB_USBtoUART
+java -jar ftx1-hamlib-1.0.1.jar -r /dev/cu.SLAB_USBtoUART
 ```
 
 This opens an interactive prompt where you can enter rigctl commands directly.
@@ -76,7 +101,7 @@ This opens an interactive prompt where you can enter rigctl commands directly.
 ### Daemon Mode
 
 ```bash
-java -jar ftx1-hamlib-1.0.0-SNAPSHOT.jar -r /dev/cu.SLAB_USBtoUART -t 4532
+java -jar ftx1-hamlib-1.0.1.jar -r /dev/cu.SLAB_USBtoUART -t 4532
 ```
 
 This starts a TCP server on port 4532 that accepts rigctld protocol connections.
@@ -123,7 +148,7 @@ This starts a TCP server on port 4532 that accepts rigctld protocol connections.
 
 Start the daemon:
 ```bash
-java -jar ftx1-hamlib-1.0.0-SNAPSHOT.jar -r /dev/cu.SLAB_USBtoUART -t 4532
+java -jar ftx1-hamlib-1.0.1.jar -r /dev/cu.SLAB_USBtoUART -t 4532
 ```
 
 Connect with rigctl:
@@ -134,8 +159,8 @@ rigctl -m 2 -r localhost:4532
 ### Interactive session
 
 ```
-$ java -jar ftx1-hamlib-1.0.0-SNAPSHOT.jar -r /dev/cu.SLAB_USBtoUART
-FTX1-Hamlib 1.0.0 - Interactive Mode
+$ java -jar ftx1-hamlib-1.0.1.jar -r /dev/cu.SLAB_USBtoUART
+FTX-1 Hamlib 1.0.1 - Interactive Mode
 Type 'help' for commands, 'quit' to exit
 
 Rig command: f
@@ -155,10 +180,10 @@ Rig command: quit
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    FTX1-Hamlib                          │
+│                    FTX-1 Hamlib                         │
 ├─────────────────────────────────────────────────────────┤
 │  FTX1Hamlib          - Main class, CLI parsing          │
-│  RigctldServer       - TCP server for daemon mode       │
+│  RigctldServer       - TCP server for emulator mode     │
 │  RigctlCommandHandler - rigctl protocol implementation  │
 ├─────────────────────────────────────────────────────────┤
 │                    ftx1-cat library                     │
@@ -172,7 +197,7 @@ Rig command: quit
 
 ## Head Type Support
 
-FTX1-Hamlib automatically detects the connected head type:
+FTX-1 Hamlib automatically detects the connected head type:
 - **Field Head (Battery)** - 6W max power
 - **Field Head (12V)** - 10W max power
 - **SPA-1/Optima** - 100W max power
