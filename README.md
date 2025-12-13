@@ -198,10 +198,30 @@ Rig command: quit
 
 ## Head Type Support
 
-FTX-1 Hamlib automatically detects the connected head type based on radio ID:
-- **Field Head (ID 0840)** - 0.5-10W (battery auto-clamps to 6W max)
-- **SPA-1 (ID 0841)** - 5-100W with internal antenna tuner
-- **SPA-1 Optima (ID 0842)** - 5-200W with internal antenna tuner
+FTX-1 Hamlib automatically detects the connected configuration using a two-stage process:
+
+### Stage 1: PC Command Format
+The PC (Power Control) command response identifies the head type:
+- **PC1xxx** - Field Head
+- **PC2xxx** - Optima/SPA-1 (5-100W with internal antenna tuner)
+
+### Stage 2: Power Probe (Field Head Only)
+For Field Head, the library probes the actual power source by attempting to set 8W:
+- If the radio **accepts** 8W → **12V power** (0.5-10W range)
+- If the radio **rejects** 8W → **Battery power** (0.5-6W range)
+
+This works because the FTX-1 enforces hardware power limits based on the actual power source.
+The probe saves and restores your original power setting.
+
+### Detected Configurations
+
+| Configuration | Power Range | Tuner |
+|---------------|-------------|-------|
+| Field Head (Battery) | 0.5-6W | No |
+| Field Head (12V) | 0.5-10W | No |
+| Optima/SPA-1 | 5-100W | Yes |
+
+Note: The radio ID is always 0840 for all FTX-1 configurations.
 
 The `dump_caps` command shows the detected head type and power limits.
 
