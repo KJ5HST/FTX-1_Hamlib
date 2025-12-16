@@ -1,6 +1,10 @@
 /*
  * Jamlib-FTX1 - Hamlib-compatible daemon for FTX-1
  * Copyright (c) 2025 by Terrell Deppe (KJ5HST)
+ *
+ * ACKNOWLEDGMENTS:
+ *   Jeremy Miller (KO4SSD) - RIT/XIT using RC/TC commands, EX0306 tuning steps
+ *   See: https://github.com/Hamlib/Hamlib/pull/1826
  */
 package com.yaesu.jamlib;
 
@@ -26,6 +30,7 @@ public class RigctlCommandHandler {
     private static final int RPRT_OK = 0;
     private static final int RPRT_EINVAL = -1;
     private static final int RPRT_EPROTO = -2;
+    private static final int RPRT_ENIMPL = -4;
     private static final int RPRT_ENAVAIL = -11;
 
     // Bidirectional mode mappings (Hamlib <-> OperatingMode)
@@ -114,6 +119,28 @@ public class RigctlCommandHandler {
             // VFO
             case "v", "get_vfo" -> getVfo();
             case "V", "set_vfo" -> setVfo(args);
+
+            // RIT/XIT (Jeremy Miller's discovery - uses RC/TC commands)
+            case "j", "get_rit" -> getRit();
+            case "J", "set_rit" -> setRit(args);
+            case "z", "get_xit" -> getXit();
+            case "Z", "set_xit" -> setXit(args);
+
+            // Memory
+            case "e", "get_mem" -> getMem();
+            case "E", "set_mem" -> setMem(args);
+            case "h", "get_channel" -> getChannel(args);
+            case "H", "set_channel" -> setChannel(args);
+
+            // CTCSS/DCS
+            case "c", "get_ctcss_tone" -> getCtcssTone();
+            case "C", "set_ctcss_tone" -> setCtcssTone(args);
+            case "d", "get_dcs_code" -> getDcsCode();
+            case "D", "set_dcs_code" -> setDcsCode(args);
+
+            // Tuning Step
+            case "n", "get_ts" -> getTs();
+            case "N", "set_ts" -> setTs(args);
 
             // Levels
             case "l", "get_level" -> getLevel(args);
@@ -297,6 +324,144 @@ public class RigctlCommandHandler {
     }
 
     // ========================================================================
+    // RIT/XIT Commands (Jeremy Miller's Discovery)
+    // Uses RC/TC commands since RT/XT return '?' on FTX-1 firmware
+    // ========================================================================
+
+    private String getRit() throws CatException {
+        synchronized (rigLock) {
+            int rit = rig.getRit();
+            return rit + "\n";
+        }
+    }
+
+    private String setRit(String args) throws CatException {
+        if (args.isEmpty()) {
+            return "RPRT " + RPRT_EINVAL + "\n";
+        }
+        int rit = Integer.parseInt(args.trim());
+        synchronized (rigLock) {
+            rig.setRit(rit);
+        }
+        return "RPRT " + RPRT_OK + "\n";
+    }
+
+    private String getXit() throws CatException {
+        synchronized (rigLock) {
+            int xit = rig.getXit();
+            return xit + "\n";
+        }
+    }
+
+    private String setXit(String args) throws CatException {
+        if (args.isEmpty()) {
+            return "RPRT " + RPRT_EINVAL + "\n";
+        }
+        int xit = Integer.parseInt(args.trim());
+        synchronized (rigLock) {
+            rig.setXit(xit);
+        }
+        return "RPRT " + RPRT_OK + "\n";
+    }
+
+    // ========================================================================
+    // Memory Commands
+    // ========================================================================
+
+    private String getMem() throws CatException {
+        synchronized (rigLock) {
+            int channel = rig.getMemoryChannel();
+            return channel + "\n";
+        }
+    }
+
+    private String setMem(String args) throws CatException {
+        if (args.isEmpty()) {
+            return "RPRT " + RPRT_EINVAL + "\n";
+        }
+        int channel = Integer.parseInt(args.trim());
+        synchronized (rigLock) {
+            rig.setMemoryChannel(channel);
+        }
+        return "RPRT " + RPRT_OK + "\n";
+    }
+
+    private String getChannel(String args) throws CatException {
+        if (args.isEmpty()) {
+            return "RPRT " + RPRT_EINVAL + "\n";
+        }
+        int channel = Integer.parseInt(args.trim());
+        synchronized (rigLock) {
+            String data = rig.readMemoryChannel(channel);
+            return data + "\n";
+        }
+    }
+
+    private String setChannel(String args) throws CatException {
+        // Full channel write is complex - return not implemented
+        return "RPRT " + RPRT_ENAVAIL + "\n";
+    }
+
+    // ========================================================================
+    // CTCSS/DCS Commands
+    // ========================================================================
+
+    private String getCtcssTone() throws CatException {
+        synchronized (rigLock) {
+            double tone = rig.getCtcssTone(true);  // TX tone
+            // Return tone in deci-Hz (Hamlib format)
+            return String.format("%.0f\n", tone * 10);
+        }
+    }
+
+    private String setCtcssTone(String args) throws CatException {
+        if (args.isEmpty()) {
+            return "RPRT " + RPRT_EINVAL + "\n";
+        }
+        // Hamlib sends tone in deci-Hz
+        int toneDeciHz = Integer.parseInt(args.trim());
+        double toneHz = toneDeciHz / 10.0;
+        synchronized (rigLock) {
+            rig.setCtcssToneHz(true, toneHz);
+        }
+        return "RPRT " + RPRT_OK + "\n";
+    }
+
+    private String getDcsCode() throws CatException {
+        synchronized (rigLock) {
+            int code = rig.getDcsCode(true);  // TX code
+            return code + "\n";
+        }
+    }
+
+    private String setDcsCode(String args) throws CatException {
+        if (args.isEmpty()) {
+            return "RPRT " + RPRT_EINVAL + "\n";
+        }
+        int code = Integer.parseInt(args.trim());
+        synchronized (rigLock) {
+            rig.setDcsCode(true, code);
+        }
+        return "RPRT " + RPRT_OK + "\n";
+    }
+
+    // ========================================================================
+    // Tuning Step Commands
+    // ========================================================================
+
+    private String getTs() throws CatException {
+        // FTX-1 uses mode-specific steps via EX0306
+        // Return 10 Hz as default
+        return "10\n";
+    }
+
+    private String setTs(String args) throws CatException {
+        // Tuning step is mode-specific on FTX-1
+        // Accept but don't do anything - use EX0306 for mode-specific steps
+        return "RPRT " + RPRT_OK + "\n";
+    }
+
+    // ========================================================================
     // Level Commands
     // ========================================================================
 
@@ -309,7 +474,7 @@ public class RigctlCommandHandler {
 
         synchronized (rigLock) {
             return switch (level) {
-                case "RFPOWER", "RF" -> {
+                case "RFPOWER" -> {
                     double power = rig.getPower();
                     double maxPower = rig.getMaxPower();
                     yield String.format("%.2f\n", power / maxPower);
@@ -317,6 +482,10 @@ public class RigctlCommandHandler {
                 case "AF" -> {
                     int afGain = rig.getAFGain(VFO.MAIN);
                     yield String.format("%.2f\n", afGain / 255.0);
+                }
+                case "RF" -> {
+                    int rfGain = rig.getRFGain(VFO.MAIN);
+                    yield String.format("%.2f\n", rfGain / 255.0);
                 }
                 case "SQL" -> {
                     int sql = rig.getSquelch(VFO.MAIN);
@@ -338,6 +507,54 @@ public class RigctlCommandHandler {
                     int comp = rig.getMeter(MeterType.COMP);
                     yield comp + "\n";
                 }
+                case "MICGAIN" -> {
+                    int micGain = rig.getMicGain();
+                    yield String.format("%.2f\n", micGain / 100.0);
+                }
+                case "KEYSPD" -> {
+                    int keySpeed = rig.getKeyerSpeed();
+                    yield keySpeed + "\n";
+                }
+                case "VOXGAIN" -> {
+                    int voxGain = rig.getVoxGain();
+                    yield String.format("%.2f\n", voxGain / 100.0);
+                }
+                case "VOXDELAY" -> {
+                    int voxDelay = rig.getVoxDelay();
+                    yield voxDelay + "\n";
+                }
+                case "NR" -> {
+                    int nrLevel = rig.getNoiseReductionLevel(VFO.MAIN);
+                    yield String.format("%.2f\n", nrLevel / 15.0);
+                }
+                case "NB" -> {
+                    int nbLevel = rig.getNoiseBlankerLevel(VFO.MAIN);
+                    yield String.format("%.2f\n", nbLevel / 15.0);
+                }
+                case "NOTCHF" -> {
+                    int notchFreq = rig.getManualNotchFrequency(VFO.MAIN);
+                    yield notchFreq + "\n";
+                }
+                case "AGC" -> {
+                    int agc = rig.getAgcMode(VFO.MAIN);
+                    yield agc + "\n";
+                }
+                case "ATT" -> {
+                    boolean attOn = rig.isAttenuatorOn(VFO.MAIN);
+                    yield (attOn ? "12" : "0") + "\n";  // 12dB attenuator
+                }
+                case "PREAMP" -> {
+                    int preamp = rig.getPreamp(VFO.MAIN);
+                    yield (preamp * 10) + "\n";  // 0=IPO, 10=AMP1, 20=AMP2
+                }
+                case "MONITOR_GAIN" -> {
+                    int monLevel = rig.getMonitorLevel(VFO.MAIN);
+                    yield String.format("%.2f\n", monLevel / 100.0);
+                }
+                case "BKINDL" -> {
+                    int bkindl = rig.getBreakInDelay();
+                    yield bkindl + "\n";
+                }
                 default -> "RPRT " + RPRT_EINVAL + "\n";
             };
         }
@@ -354,7 +571,7 @@ public class RigctlCommandHandler {
 
         synchronized (rigLock) {
             return switch (level) {
-                case "RFPOWER", "RF" -> {
+                case "RFPOWER" -> {
                     double powerNorm = Double.parseDouble(value);
                     double watts = powerNorm * rig.getMaxPower();
                     rig.setPower(watts);
@@ -365,9 +582,74 @@ public class RigctlCommandHandler {
                     rig.setAFGain(VFO.MAIN, (int) (afNorm * 255));
                     yield "RPRT " + RPRT_OK + "\n";
                 }
+                case "RF" -> {
+                    double rfNorm = Double.parseDouble(value);
+                    rig.setRFGain(VFO.MAIN, (int) (rfNorm * 255));
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
                 case "SQL" -> {
                     double sqlNorm = Double.parseDouble(value);
                     rig.setSquelch(VFO.MAIN, (int) (sqlNorm * 100));
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "MICGAIN" -> {
+                    double micNorm = Double.parseDouble(value);
+                    rig.setMicGain((int) (micNorm * 100));
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "KEYSPD" -> {
+                    int keySpeed = Integer.parseInt(value);
+                    rig.setKeyerSpeed(keySpeed);
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "VOXGAIN" -> {
+                    double voxNorm = Double.parseDouble(value);
+                    rig.setVoxGain((int) (voxNorm * 100));
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "VOXDELAY" -> {
+                    int voxDelay = Integer.parseInt(value);
+                    rig.setVoxDelay(voxDelay);
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "NR" -> {
+                    double nrNorm = Double.parseDouble(value);
+                    rig.setNoiseReductionLevel(VFO.MAIN, (int) (nrNorm * 15));
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "NB" -> {
+                    double nbNorm = Double.parseDouble(value);
+                    rig.setNoiseBlankerLevel(VFO.MAIN, (int) (nbNorm * 15));
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "NOTCHF" -> {
+                    int notchFreq = Integer.parseInt(value);
+                    rig.setManualNotchFrequency(VFO.MAIN, notchFreq);
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "AGC" -> {
+                    int agc = Integer.parseInt(value);
+                    rig.setAgcMode(VFO.MAIN, agc);
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "ATT" -> {
+                    int att = Integer.parseInt(value);
+                    rig.setAttenuator(VFO.MAIN, att > 0);
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "PREAMP" -> {
+                    int preamp = Integer.parseInt(value);
+                    rig.setPreamp(VFO.MAIN, preamp / 10);  // 0, 10, 20 -> 0, 1, 2
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "MONITOR_GAIN" -> {
+                    double monNorm = Double.parseDouble(value);
+                    rig.setMonitorLevel(VFO.MAIN, (int) (monNorm * 100));
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "BKINDL" -> {
+                    int bkindl = Integer.parseInt(value);
+                    rig.setBreakInDelay(bkindl);
                     yield "RPRT " + RPRT_OK + "\n";
                 }
                 default -> "RPRT " + RPRT_EINVAL + "\n";
@@ -422,6 +704,60 @@ public class RigctlCommandHandler {
                     boolean locked = rig.isLocked();
                     yield (locked ? "1" : "0") + "\n";
                 }
+                case "COMP" -> {
+                    boolean compOn = rig.isProcessorOn();
+                    yield (compOn ? "1" : "0") + "\n";
+                }
+                case "VOX" -> {
+                    boolean voxOn = rig.isVoxOn();
+                    yield (voxOn ? "1" : "0") + "\n";
+                }
+                case "TONE" -> {
+                    // CTCSS encode on/off
+                    int mode = rig.getCtcssMode();
+                    yield (mode == 1 ? "1" : "0") + "\n";  // 1 = ENCODE
+                }
+                case "TSQL" -> {
+                    // Tone squelch on/off
+                    int mode = rig.getCtcssMode();
+                    yield (mode == 2 ? "1" : "0") + "\n";  // 2 = TSQ
+                }
+                case "NB" -> {
+                    boolean nbOn = rig.isNoiseBlankerOn(VFO.MAIN);
+                    yield (nbOn ? "1" : "0") + "\n";
+                }
+                case "NR" -> {
+                    boolean nrOn = rig.isNoiseReductionOn(VFO.MAIN);
+                    yield (nrOn ? "1" : "0") + "\n";
+                }
+                case "ANF" -> {
+                    boolean anfOn = rig.isAutoNotchOn(VFO.MAIN);
+                    yield (anfOn ? "1" : "0") + "\n";
+                }
+                case "APF" -> {
+                    boolean apfOn = rig.isApfOn(VFO.MAIN);
+                    yield (apfOn ? "1" : "0") + "\n";
+                }
+                case "MON", "MN" -> {
+                    int monLevel = rig.getMonitorLevel(VFO.MAIN);
+                    yield (monLevel > 0 ? "1" : "0") + "\n";
+                }
+                case "RIT" -> {
+                    int rit = rig.getRit();
+                    yield (rit != 0 ? "1" : "0") + "\n";
+                }
+                case "XIT" -> {
+                    int xit = rig.getXit();
+                    yield (xit != 0 ? "1" : "0") + "\n";
+                }
+                case "SBKIN" -> {
+                    int breakIn = rig.getBreakInMode();
+                    yield (breakIn == 1 ? "1" : "0") + "\n";  // 1 = semi
+                }
+                case "FBKIN" -> {
+                    int breakIn = rig.getBreakInMode();
+                    yield (breakIn == 2 ? "1" : "0") + "\n";  // 2 = full (QSK)
+                }
                 default -> "RPRT " + RPRT_EINVAL + "\n";
             };
         }
@@ -441,6 +777,71 @@ public class RigctlCommandHandler {
                 case "TUNER" -> "RPRT " + RPRT_ENAVAIL + "\n";  // TODO: implement
                 case "LOCK" -> {
                     rig.setLocked(value > 0);
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "COMP" -> {
+                    rig.setProcessorOn(value > 0);
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "VOX" -> {
+                    rig.setVoxOn(value > 0);
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "TONE" -> {
+                    // CTCSS encode: 0=off, 1=encode
+                    rig.setCtcssMode(value > 0 ? 1 : 0);
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "TSQL" -> {
+                    // Tone squelch: 0=off, 2=TSQ
+                    rig.setCtcssMode(value > 0 ? 2 : 0);
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "NB" -> {
+                    // 0=off, otherwise set to level 8 (middle)
+                    rig.setNoiseBlankerLevel(VFO.MAIN, value > 0 ? 8 : 0);
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "NR" -> {
+                    // 0=off, otherwise set to level 8 (middle)
+                    rig.setNoiseReductionLevel(VFO.MAIN, value > 0 ? 8 : 0);
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "ANF" -> {
+                    rig.setAutoNotch(VFO.MAIN, value > 0);
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "APF" -> {
+                    rig.setApfOn(VFO.MAIN, value > 0);
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "MON", "MN" -> {
+                    // 0=off, otherwise set to level 50 (middle)
+                    rig.setMonitorLevel(VFO.MAIN, value > 0 ? 50 : 0);
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "RIT" -> {
+                    // RIT on/off - clear to 0 if off
+                    if (value == 0) {
+                        rig.setRit(0);
+                    }
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "XIT" -> {
+                    // XIT on/off - clear to 0 if off
+                    if (value == 0) {
+                        rig.setXit(0);
+                    }
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "SBKIN" -> {
+                    // Semi break-in: 0=off, 1=semi
+                    rig.setBreakInMode(value > 0 ? 1 : 0);
+                    yield "RPRT " + RPRT_OK + "\n";
+                }
+                case "FBKIN" -> {
+                    // Full break-in (QSK): 0=off, 2=full
+                    rig.setBreakInMode(value > 0 ? 2 : 0);
                     yield "RPRT " + RPRT_OK + "\n";
                 }
                 default -> "RPRT " + RPRT_EINVAL + "\n";
@@ -519,6 +920,19 @@ public class RigctlCommandHandler {
         sb.append("  T, set_ptt 0|1       Set PTT\n");
         sb.append("  v, get_vfo           Get current VFO\n");
         sb.append("  V, set_vfo VFOA|VFOB Set VFO\n");
+        sb.append("  j, get_rit           Get RIT offset (Hz)\n");
+        sb.append("  J, set_rit OFFSET    Set RIT offset (Hz)\n");
+        sb.append("  z, get_xit           Get XIT offset (Hz)\n");
+        sb.append("  Z, set_xit OFFSET    Set XIT offset (Hz)\n");
+        sb.append("  e, get_mem           Get memory channel\n");
+        sb.append("  E, set_mem CH        Set memory channel\n");
+        sb.append("  h, get_channel CH    Get channel data\n");
+        sb.append("  c, get_ctcss_tone    Get CTCSS tone (deci-Hz)\n");
+        sb.append("  C, set_ctcss_tone    Set CTCSS tone (deci-Hz)\n");
+        sb.append("  d, get_dcs_code      Get DCS code\n");
+        sb.append("  D, set_dcs_code      Set DCS code\n");
+        sb.append("  n, get_ts            Get tuning step\n");
+        sb.append("  N, set_ts STEP       Set tuning step\n");
         sb.append("  s, get_split_vfo     Get split status\n");
         sb.append("  S, set_split_vfo 0|1 Set split\n");
         sb.append("  l, get_level LEVEL   Get level (RFPOWER, AF, SQL, STRENGTH, SWR)\n");

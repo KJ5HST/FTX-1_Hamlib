@@ -4,6 +4,10 @@
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public License.
+ *
+ * ACKNOWLEDGMENTS:
+ *   Jeremy Miller (KO4SSD) - RIT/XIT using RC/TC commands, EX0306 tuning steps
+ *   See: https://github.com/Hamlib/Hamlib/pull/1826
  */
 package com.yaesu.jamlib;
 
@@ -34,7 +38,7 @@ import java.io.IOException;
  */
 public class JamlibFTX1 {
 
-    public static final String VERSION = "1.0.3";
+    public static final String VERSION = "1.1.0";
     public static final int DEFAULT_PORT = 4532;
     public static final int DEFAULT_BAUD = 38400;
 

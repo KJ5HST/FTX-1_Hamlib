@@ -1,7 +1,16 @@
 # FTX-1 Hamlib
 
-Hamlib-compatible emulator for Yaesu FTX-1 using the Java ftx1-cat library. 
+Hamlib-compatible emulator for Yaesu FTX-1 using the Java ftx1-cat library.
 Visit https://github.com/KJ5HST/FTX-1_CAT for more details on ftx1-cat.
+
+## Acknowledgments
+
+Special thanks to **Jeremy Miller (KO4SSD)** for his critical discoveries in
+[Hamlib PR #1826](https://github.com/Hamlib/Hamlib/pull/1826):
+
+- **RIT/XIT**: Standard RT/XT commands return `?` on FTX-1 firmware. Jeremy discovered
+  that RC (Receiver Clarifier) and TC (Transmit Clarifier) commands work correctly.
+- **Tuning Steps**: Mode-specific dial steps via EX0306 extended menu command.
 
 ## Overview
 
@@ -23,19 +32,19 @@ This allows any Hamlib-compatible application to control the FTX-1 via the stand
 mvn clean package
 ```
 
-This creates an uber-jar at `target/ftx1-hamlib-1.0.3.jar` with all dependencies included.
+This creates an uber-jar at `target/ftx1-hamlib-1.1.0.jar` with all dependencies included.
 
 ## Usage
 
 ### GUI Mode (Default)
 
 ```bash
-java -jar ftx1-hamlib-1.0.3.jar
+java -jar ftx1-hamlib-1.1.0.jar
 ```
 
 Or explicitly:
 ```bash
-java -jar ftx1-hamlib-1.0.3.jar --gui
+java -jar ftx1-hamlib-1.1.0.jar --gui
 ```
 
 The GUI provides:
@@ -94,7 +103,7 @@ Select **Default (System)** to use your operating system's language setting.
 ### Interactive Mode
 
 ```bash
-java -jar ftx1-hamlib-1.0.3.jar -r /dev/cu.SLAB_USBtoUART
+java -jar ftx1-hamlib-1.1.0.jar -r /dev/cu.SLAB_USBtoUART
 ```
 
 This opens an interactive prompt where you can enter rigctl commands directly.
@@ -102,7 +111,7 @@ This opens an interactive prompt where you can enter rigctl commands directly.
 ### Daemon Mode
 
 ```bash
-java -jar ftx1-hamlib-1.0.3.jar -r /dev/cu.SLAB_USBtoUART -t 4532
+java -jar ftx1-hamlib-1.1.0.jar -r /dev/cu.SLAB_USBtoUART -t 4532
 ```
 
 This starts a TCP server on port 4532 that accepts rigctld protocol connections.
@@ -122,6 +131,8 @@ This starts a TCP server on port 4532 that accepts rigctld protocol connections.
 
 ## Supported Commands
 
+### Core Commands
+
 | Command | Description |
 |---------|-------------|
 | `f, get_freq` | Get frequency (Hz) |
@@ -132,16 +143,108 @@ This starts a TCP server on port 4532 that accepts rigctld protocol connections.
 | `T, set_ptt 0\|1` | Set PTT |
 | `v, get_vfo` | Get current VFO |
 | `V, set_vfo VFOA\|VFOB` | Set VFO |
+| `j, get_rit` | Get RIT offset (Hz) - uses RC command |
+| `J, set_rit OFFSET` | Set RIT offset (Hz) - uses RC command |
+| `z, get_xit` | Get XIT offset (Hz) - uses TC command |
+| `Z, set_xit OFFSET` | Set XIT offset (Hz) - uses TC command |
 | `s, get_split_vfo` | Get split status |
 | `S, set_split_vfo 0\|1` | Set split |
-| `l, get_level LEVEL` | Get level (RFPOWER, AF, SQL, STRENGTH, SWR) |
-| `L, set_level LVL VAL` | Set level |
-| `u, get_func FUNC` | Get function (LOCK) |
-| `U, set_func FUNC 0\|1` | Set function |
+
+### Memory Commands
+
+| Command | Description |
+|---------|-------------|
+| `e, get_mem` | Get memory channel number |
+| `E, set_mem CH` | Set memory channel number |
+| `h, get_channel CH` | Get channel data |
+
+### CTCSS/DCS Commands
+
+| Command | Description |
+|---------|-------------|
+| `c, get_ctcss_tone` | Get CTCSS tone (deci-Hz) |
+| `C, set_ctcss_tone TONE` | Set CTCSS tone (deci-Hz) |
+| `d, get_dcs_code` | Get DCS code |
+| `D, set_dcs_code CODE` | Set DCS code |
+
+### Tuning Step
+
+| Command | Description |
+|---------|-------------|
+| `n, get_ts` | Get tuning step |
+| `N, set_ts STEP` | Set tuning step |
+
+### Levels (l/L commands)
+
+| Level | Description |
+|-------|-------------|
+| `RFPOWER` | TX power (normalized 0-1) |
+| `AF` | AF gain (normalized 0-1) |
+| `RF` | RF gain (normalized 0-1) |
+| `SQL` | Squelch (normalized 0-1) |
+| `STRENGTH` | S-meter reading (dB) |
+| `SWR` | SWR meter |
+| `ALC` | ALC meter |
+| `COMP` | Compression meter |
+| `MICGAIN` | Microphone gain (normalized 0-1) |
+| `KEYSPD` | CW keyer speed (4-60 WPM) |
+| `VOXGAIN` | VOX gain (normalized 0-1) |
+| `VOXDELAY` | VOX delay (ms) |
+| `NR` | Noise reduction level (normalized 0-1) |
+| `NB` | Noise blanker level (normalized 0-1) |
+| `NOTCHF` | Manual notch frequency (Hz) |
+| `AGC` | AGC mode |
+| `ATT` | Attenuator (0 or 12 dB) |
+| `PREAMP` | Preamp (0=IPO, 10=AMP1, 20=AMP2) |
+| `MONITOR_GAIN` | Monitor level (normalized 0-1) |
+| `BKINDL` | Break-in delay (tenths of seconds) |
+
+### Functions (u/U commands)
+
+| Function | Description |
+|----------|-------------|
+| `LOCK` | Dial lock |
+| `COMP` | Speech processor on/off |
+| `VOX` | VOX on/off |
+| `TONE` | CTCSS encode on/off |
+| `TSQL` | Tone squelch on/off |
+| `NB` | Noise blanker on/off |
+| `NR` | Noise reduction on/off |
+| `ANF` | Auto notch filter on/off |
+| `APF` | Audio peak filter on/off |
+| `MON` | Monitor on/off |
+| `RIT` | RIT on/off |
+| `XIT` | XIT on/off |
+| `SBKIN` | Semi break-in on/off |
+| `FBKIN` | Full break-in (QSK) on/off |
+
+### Other Commands
+
+| Command | Description |
+|---------|-------------|
 | `w, send_cmd CMD` | Send raw CAT command |
 | `_, get_info` | Get rig info |
 | `1, dump_caps` | Dump capabilities |
 | `q, quit` | Exit |
+
+### Extended Commands (rigctld protocol)
+
+| Command | Description |
+|---------|-------------|
+| `\dump_state` | Dump rig state (for WSJT-X) |
+| `\get_powerstat` | Get power status |
+| `\set_powerstat` | Set power status |
+| `\get_vfo_info` | Get VFO details |
+| `\get_rig_info` | Get rig info (key=value) |
+| `\get_split_freq` | Get split TX frequency |
+| `\set_split_freq` | Set split TX frequency |
+| `\get_split_mode` | Get split TX mode |
+| `\set_split_mode` | Set split TX mode |
+| `\send_morse MSG` | Send CW message |
+| `\stop_morse` | Stop CW sending |
+| `\wait_morse` | Wait for CW completion |
+| `\send_voice_mem N` | Play voice memory (1-5) |
+| `\halt` | Emergency stop (PTT off) |
 
 ## Examples
 
@@ -149,7 +252,7 @@ This starts a TCP server on port 4532 that accepts rigctld protocol connections.
 
 Start the daemon:
 ```bash
-java -jar ftx1-hamlib-1.0.3.jar -r /dev/cu.SLAB_USBtoUART -t 4532
+java -jar ftx1-hamlib-1.1.0.jar -r /dev/cu.SLAB_USBtoUART -t 4532
 ```
 
 Connect with rigctl:
@@ -160,8 +263,8 @@ rigctl -m 2 -r localhost:4532
 ### Interactive session
 
 ```
-$ java -jar ftx1-hamlib-1.0.3.jar -r /dev/cu.SLAB_USBtoUART
-FTX-1 Hamlib 1.0.3 - Interactive Mode
+$ java -jar ftx1-hamlib-1.1.0.jar -r /dev/cu.SLAB_USBtoUART
+FTX-1 Hamlib 1.1.0 - Interactive Mode
 Type 'help' for commands, 'quit' to exit
 
 Rig command: f
@@ -265,9 +368,12 @@ The test suite includes:
 | **Frequency** | Get/set on all bands (160m-70cm) |
 | **Mode** | All modes (USB, LSB, CW, AM, FM, RTTY, PKTUSB, etc.) |
 | **VFO** | VFO selection and switching |
+| **RIT/XIT** | Clarifier control using RC/TC commands |
 | **Split** | Split enable/disable |
-| **Levels** | RFPOWER, AF, SQL, STRENGTH, SWR, ALC, COMP |
-| **Functions** | LOCK, TUNER (SPA-1 only) |
+| **Memory** | Channel get/set, channel read |
+| **CTCSS/DCS** | Tone and code get/set |
+| **Levels** | RFPOWER, AF, RF, SQL, MICGAIN, KEYSPD, VOX, NR, NB, AGC, ATT, PREAMP |
+| **Functions** | LOCK, COMP, VOX, TONE, TSQL, NB, NR, ANF, APF, MON, SBKIN, FBKIN |
 | **PTT** | Get/set PTT status (disabled by default) |
 | **Raw Commands** | Direct CAT command passthrough |
 | **Error Handling** | Invalid commands, missing args |
