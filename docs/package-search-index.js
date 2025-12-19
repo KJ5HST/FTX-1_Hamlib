@@ -1,1 +1,1 @@
-packageSearchIndex = [{"l":"All Packages","u":"allpackages-index.html","k":"18"},{"l":"com.yaesu.jamlib"},{"l":"com.yaesu.jamlib.gui"},{"l":"com.yaesu.jamlib.i18n"},{"l":"com.yaesu.jamlib.server"}];updateSearchResults();
+packageSearchIndex = [{"l":"All Packages","u":"allpackages-index.html","k":"18"},{"l":"com.yaesu.hamlib"},{"l":"com.yaesu.hamlib.gui"},{"l":"com.yaesu.hamlib.i18n"},{"l":"com.yaesu.hamlib.server"}];updateSearchResults();

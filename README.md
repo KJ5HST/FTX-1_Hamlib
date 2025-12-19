@@ -32,19 +32,19 @@ This allows any Hamlib-compatible application to control the FTX-1 via the stand
 mvn clean package
 ```
 
-This creates an uber-jar at `target/ftx1-hamlib-1.1.0.jar` with all dependencies included.
+This creates an uber-jar at `target/ftx1-hamlib-1.2.0.jar` with all dependencies included.
 
 ## Usage
 
 ### GUI Mode (Default)
 
 ```bash
-java -jar ftx1-hamlib-1.1.0.jar
+java -jar ftx1-hamlib-1.2.0.jar
 ```
 
 Or explicitly:
 ```bash
-java -jar ftx1-hamlib-1.1.0.jar --gui
+java -jar ftx1-hamlib-1.2.0.jar --gui
 ```
 
 The GUI provides:
@@ -103,7 +103,7 @@ Select **Default (System)** to use your operating system's language setting.
 ### Interactive Mode
 
 ```bash
-java -jar ftx1-hamlib-1.1.0.jar -r /dev/cu.SLAB_USBtoUART
+java -jar ftx1-hamlib-1.2.0.jar -r /dev/cu.SLAB_USBtoUART
 ```
 
 This opens an interactive prompt where you can enter rigctl commands directly.
@@ -111,7 +111,7 @@ This opens an interactive prompt where you can enter rigctl commands directly.
 ### Daemon Mode
 
 ```bash
-java -jar ftx1-hamlib-1.1.0.jar -r /dev/cu.SLAB_USBtoUART -t 4532
+java -jar ftx1-hamlib-1.2.0.jar -r /dev/cu.SLAB_USBtoUART -t 4532
 ```
 
 This starts a TCP server on port 4532 that accepts rigctld protocol connections.
@@ -252,7 +252,7 @@ This starts a TCP server on port 4532 that accepts rigctld protocol connections.
 
 Start the daemon:
 ```bash
-java -jar ftx1-hamlib-1.1.0.jar -r /dev/cu.SLAB_USBtoUART -t 4532
+java -jar ftx1-hamlib-1.2.0.jar -r /dev/cu.SLAB_USBtoUART -t 4532
 ```
 
 Connect with rigctl:
@@ -263,8 +263,8 @@ rigctl -m 2 -r localhost:4532
 ### Interactive session
 
 ```
-$ java -jar ftx1-hamlib-1.1.0.jar -r /dev/cu.SLAB_USBtoUART
-FTX-1 Hamlib 1.1.0 - Interactive Mode
+$ java -jar ftx1-hamlib-1.2.0.jar -r /dev/cu.SLAB_USBtoUART
+FTX1-Hamlib 1.2.0 - Interactive Mode
 Type 'help' for commands, 'quit' to exit
 
 Rig command: f

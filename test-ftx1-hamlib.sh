@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # FTX-1 Hamlib Command Test Script
-# Tests all supported Hamlib commands via Jamlib-FTX1
+# Tests all supported Hamlib commands via FTX1-Hamlib
 #
 # Usage: ./test-ftx1-hamlib.sh <serial_port> [options]
 #
@@ -22,7 +22,7 @@ QUICK=false
 FULL=false
 TX_TESTS=false
 TCP_PORT=4532
-JAR_FILE="target/jamlib-ftx1-1.0.0-SNAPSHOT.jar"
+JAR_FILE="target/ftx1-hamlib-1.0.0-SNAPSHOT.jar"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -114,7 +114,7 @@ warn() {
 }
 
 # Start daemon in background
-log "Starting Jamlib-FTX1 daemon on port $TCP_PORT..."
+log "Starting FTX1-Hamlib daemon on port $TCP_PORT..."
 java -jar "$JAR_FILE" -r "$SERIAL_PORT" -t $TCP_PORT &
 DAEMON_PID=$!
 sleep 2
