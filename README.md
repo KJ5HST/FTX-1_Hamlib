@@ -280,6 +280,139 @@ Rig command: l STRENGTH
 Rig command: quit
 ```
 
+## Audio Streaming for Remote WSJT-X
+
+FTX-1 Hamlib includes bidirectional audio streaming support, enabling remote operation with WSJT-X and other digital mode applications. This allows you to run WSJT-X on a computer that is not physically connected to the FTX-1.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              RADIO SIDE                                     │
+│  ┌─────────────┐    USB     ┌─────────────────────────────────────────┐    │
+│  │   FTX-1     │◄──────────►│           ftx1-hamlib Server            │    │
+│  │   Radio     │  Serial+   │  ┌─────────────┐  ┌──────────────────┐  │    │
+│  └─────────────┘   Audio    │  │ RigctldServer│  │AudioStreamServer │  │    │
+│                             │  │  (TCP:4532) │  │   (TCP:4533)     │  │    │
+│                             │  └─────────────┘  └──────────────────┘  │    │
+│                             └───────────┬───────────────┬─────────────┘    │
+└─────────────────────────────────────────┼───────────────┼──────────────────┘
+                                          │               │
+                                     CAT Control      Audio Stream
+                                          │               │
+┌─────────────────────────────────────────┼───────────────┼──────────────────┐
+│                              CLIENT SIDE                │                   │
+│                             └───────────┴───────────────┘                   │
+│                                         │                                   │
+│                             ┌───────────▼───────────┐                       │
+│                             │  ftx1-hamlib Client   │                       │
+│                             │   (AudioStreamClient) │                       │
+│                             └───────────┬───────────┘                       │
+│                                         │                                   │
+│                             ┌───────────▼───────────┐                       │
+│                             │  Virtual Audio Device │                       │
+│                             │ (BlackHole/VB-Cable)  │                       │
+│                             └───────────┬───────────┘                       │
+│                                         │                                   │
+│                             ┌───────────▼───────────┐                       │
+│                             │       WSJT-X          │                       │
+│                             │  (Hamlib NET rigctl)  │                       │
+│                             └───────────────────────┘                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Server Setup (Radio Side)
+
+1. **Connect FTX-1** via USB to the server computer
+2. **Launch ftx1-hamlib GUI**:
+   ```bash
+   java -jar ftx1-hamlib-1.2.0.jar
+   ```
+3. **Connect to radio** using the Connection panel
+4. **Start Hamlib** on the Hamlib panel (default port 4532)
+5. **Configure Audio Streaming** tab:
+   - Select FTX-1 USB audio device for Capture (RX)
+   - Select FTX-1 USB audio device for Playback (TX)
+   - Click "Start Audio Server" (default port 4533)
+
+### Client Setup (Remote WSJT-X Side)
+
+#### Step 1: Install Virtual Audio Device
+
+| Platform | Software | Installation |
+|----------|----------|--------------|
+| **macOS** | BlackHole | `brew install blackhole-2ch` |
+| **Windows** | VB-Cable | Download from [vb-audio.com/Cable](https://vb-audio.com/Cable/) |
+| **Linux** | PulseAudio | `pactl load-module module-null-sink sink_name=virtual` |
+
+#### Step 2: Run Audio Client
+
+```bash
+# Basic usage
+java -cp ftx1-hamlib-1.2.0.jar com.yaesu.hamlib.audio.client.HamlibAudioClient <server-ip>
+
+# With explicit port
+java -cp ftx1-hamlib-1.2.0.jar com.yaesu.hamlib.audio.client.HamlibAudioClient -h 192.168.1.100 -p 4533
+
+# List available audio devices
+java -cp ftx1-hamlib-1.2.0.jar com.yaesu.hamlib.audio.client.HamlibAudioClient --list
+
+# Show setup instructions
+java -cp ftx1-hamlib-1.2.0.jar com.yaesu.hamlib.audio.client.HamlibAudioClient --instructions
+```
+
+#### Audio Client Options
+
+| Option | Description |
+|--------|-------------|
+| `-h, --host HOST` | Server hostname or IP |
+| `-p, --port PORT` | Server audio port (default: 4533) |
+| `-c, --capture NAME` | Capture device name |
+| `-o, --playback NAME` | Playback device name |
+| `-l, --list` | List available audio devices |
+| `-i, --instructions` | Show setup instructions |
+| `-d, --diagnostic` | Run diagnostic report |
+| `--help` | Show help |
+
+#### Step 3: Configure WSJT-X
+
+1. **Audio Settings** (File → Settings → Audio):
+   - Soundcard Input: `BlackHole 2ch` (macOS) / `CABLE Output` (Windows)
+   - Soundcard Output: `BlackHole 2ch` (macOS) / `CABLE Input` (Windows)
+
+2. **Radio Settings** (File → Settings → Radio):
+   - Rig: `Hamlib NET rigctl`
+   - Network Server: `<server-ip>:4532` (e.g., `192.168.1.100:4532`)
+   - Click "Test CAT" to verify connection
+
+### Audio Protocol Specifications
+
+| Parameter | Value |
+|-----------|-------|
+| Sample Rate | 48000 Hz (WSJT-X compatible) |
+| Bit Depth | 16-bit signed PCM |
+| Channels | Mono |
+| Frame Size | 20ms (960 samples) |
+| Network Port | 4533 (default) |
+| Target Latency | < 200ms |
+
+### Troubleshooting
+
+**No virtual audio devices found:**
+- Run `--diagnostic` to see available devices
+- Ensure virtual audio software is installed and running
+- On macOS, check System Settings → Sound for BlackHole
+
+**High latency or dropouts:**
+- Check network connection stability
+- Reduce network congestion
+- The buffer automatically adjusts (target: 100ms)
+
+**WSJT-X not decoding:**
+- Verify audio levels (not too high/low)
+- Check that correct virtual device is selected in WSJT-X
+- Ensure audio client shows "Streaming" status
+
 ## Architecture
 
 ```
@@ -289,6 +422,7 @@ Rig command: quit
 │  FTX1Hamlib          - Main class, CLI parsing          │
 │  RigctldServer       - TCP server for emulator mode     │
 │  RigctlCommandHandler - rigctl protocol implementation  │
+│  AudioStreamServer   - TCP server for audio streaming   │
 ├─────────────────────────────────────────────────────────┤
 │                    ftx1-cat library                     │
 │  FTX1                - High-level radio control API     │
@@ -377,6 +511,74 @@ The test suite includes:
 | **PTT** | Get/set PTT status (disabled by default) |
 | **Raw Commands** | Direct CAT command passthrough |
 | **Error Handling** | Invalid commands, missing args |
+
+## VARA and Winlink Express Setup
+
+FTX-1 Hamlib can be used with VARA (HF or FM) and Winlink Express for digital messaging.
+
+### Overview
+
+Three components need configuration:
+1. **CAT Control** → FTX-1 Hamlib (handles frequency/mode/PTT)
+2. **Audio** → FTX-1's USB audio interface (separate from CAT)
+3. **VARA** → Connects to both
+
+### Step 1: Start FTX-1 Hamlib
+
+```bash
+java -jar ftx1-hamlib-1.2.0.jar -r /dev/cu.SLAB_USBtoUART -t 4532
+```
+
+Or use GUI mode and click "Start" on the Hamlib emulator.
+
+### Step 2: Configure VARA
+
+In VARA HF (or VARA FM):
+
+1. **Settings → Soundcard**
+   - **Input**: Select `USB Audio CODEC` (the FTX-1's built-in sound interface)
+   - **Output**: Select `USB Audio CODEC` (same device)
+
+2. **Settings → PTT**
+   - Select **CAT** for PTT method
+   - Configure as:
+     - **Host**: `127.0.0.1`
+     - **Port**: `4532`
+   - Some VARA versions have direct rigctld support; if not, you may need to use Omnirig as a bridge
+
+### Step 3: Configure Winlink Express
+
+1. Open Winlink Express
+2. Go to **VARA HF Winlink** session (or VARA FM)
+3. **Settings → Radio Setup**: For PTT, you can let VARA handle it (recommended) or configure Hamlib here as well
+
+### Step 4: Radio Settings
+
+On your FTX-1:
+- Set mode to **DATA-U** (USB Data) or **USB** depending on preference
+- Adjust **DATA MOD** menu settings for proper audio levels if needed
+- Keep the radio's VOX **OFF** (use CAT PTT instead)
+
+### Audio Level Tips
+
+- **TX Audio**: Start with VARA's drive level at 50%, adjust until ALC barely moves
+- **RX Audio**: Adjust FTX-1's AF gain or VARA's input level for proper decode
+
+### Alternative: VOX PTT
+
+If CAT PTT gives you trouble, you can use VOX:
+1. Enable VOX on the FTX-1 (`U VOX 1` via CAT or menu)
+2. Set VARA PTT to "None" or "VOX"
+3. This is simpler but slightly less reliable than CAT PTT
+
+### VARA Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| No TX audio | Check USB audio device is selected, not your computer's speakers |
+| PTT not working | Verify FTX-1 Hamlib is running and test with `T 1` command |
+| VARA not decoding | Check FTX-1 is in DATA-U or USB mode, verify audio levels |
+| Wrong audio device | FTX-1 shows as "USB Audio CODEC" on most systems |
 
 ## License
 

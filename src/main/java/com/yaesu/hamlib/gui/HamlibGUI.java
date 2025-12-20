@@ -12,6 +12,7 @@ import com.yaesu.ftx1.model.HeadType;
 import com.yaesu.ftx1.model.OperatingMode;
 import com.yaesu.ftx1.model.VFO;
 import com.yaesu.hamlib.RigctlCommandHandler;
+import com.yaesu.hamlib.audio.AudioStreamServer;
 import com.yaesu.hamlib.i18n.Messages;
 import com.yaesu.hamlib.server.RigctlCommandListener;
 import com.yaesu.hamlib.server.RigctldServer;
@@ -89,6 +90,9 @@ public class HamlibGUI extends JFrame {
 
     // Track active VFO for status updates
     private boolean activeVfoIsB = false;
+
+    // Audio streaming panel
+    private AudioControlPanel audioControlPanel;
 
     public HamlibGUI() {
         super(Messages.get("app.title"));
@@ -283,6 +287,10 @@ public class HamlibGUI extends JFrame {
         // Radio Data tab
         JPanel commMonitorPanel = createCommMonitorPanel();
         tabbedPane.addTab(Messages.get("tab.radiodata"), commMonitorPanel);
+
+        // Audio Streaming tab
+        audioControlPanel = new AudioControlPanel();
+        tabbedPane.addTab(Messages.get("tab.audio"), audioControlPanel);
 
         // Split pane
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, statusPanel, tabbedPane);
@@ -2482,6 +2490,9 @@ public class HamlibGUI extends JFrame {
     }
 
     private void exitApplication() {
+        if (audioControlPanel != null) {
+            audioControlPanel.shutdown();
+        }
         if (connected) {
             disconnect();
         }
