@@ -13,6 +13,8 @@ import com.yaesu.ftx1.model.OperatingMode;
 import com.yaesu.ftx1.model.VFO;
 import com.yaesu.hamlib.RigctlCommandHandler;
 import com.yaesu.hamlib.audio.AudioStreamServer;
+import com.yaesu.hamlib.audio.client.AudioStreamClient;
+import com.yaesu.hamlib.client.RigctlClient;
 import com.yaesu.hamlib.i18n.Messages;
 import com.yaesu.hamlib.server.RigctlCommandListener;
 import com.yaesu.hamlib.server.RigctldServer;
@@ -93,6 +95,24 @@ public class HamlibGUI extends JFrame {
 
     // Audio streaming panel
     private AudioControlPanel audioControlPanel;
+
+    // Mode selection (Local vs Remote)
+    private JRadioButton localModeButton;
+    private JRadioButton remoteModeButton;
+    private boolean remoteMode = false;
+    private CardLayout connectionCardLayout;
+    private JPanel connectionCardPanel;
+
+    // Remote mode components
+    private JTextField remoteHostField;
+    private JSpinner remoteCatPortSpinner;
+    private JSpinner remoteAudioPortSpinner;
+    private JButton remoteConnectButton;
+    private JLabel remoteConnectionStatus;
+
+    // Remote mode client state
+    private RigctlClient remoteRigClient;
+    private boolean remoteConnected = false;
 
     public HamlibGUI() {
         super(Messages.get("app.title"));
@@ -183,10 +203,52 @@ public class HamlibGUI extends JFrame {
     }
 
     private JPanel createTopPanel() {
-        JPanel panel = new JPanel(new GridLayout(1, 2, 10, 0));
+        JPanel panel = new JPanel(new BorderLayout(5, 5));
         panel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
-        // Connection panel
+        // Mode selector at the very top
+        JPanel modePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        modePanel.setBorder(new TitledBorder(Messages.get("mode.title")));
+        ButtonGroup modeGroup = new ButtonGroup();
+        localModeButton = new JRadioButton(Messages.get("mode.local"), true);
+        remoteModeButton = new JRadioButton(Messages.get("mode.remote"), false);
+        modeGroup.add(localModeButton);
+        modeGroup.add(remoteModeButton);
+        modePanel.add(localModeButton);
+        modePanel.add(remoteModeButton);
+
+        // Mode change listener
+        ActionListener modeListener = e -> {
+            remoteMode = remoteModeButton.isSelected();
+            connectionCardLayout.show(connectionCardPanel, remoteMode ? "remote" : "local");
+            if (audioControlPanel != null) {
+                audioControlPanel.setRemoteMode(remoteMode);
+            }
+        };
+        localModeButton.addActionListener(modeListener);
+        remoteModeButton.addActionListener(modeListener);
+
+        panel.add(modePanel, BorderLayout.NORTH);
+
+        // Card panel for switching between local and remote connection panels
+        connectionCardLayout = new CardLayout();
+        connectionCardPanel = new JPanel(connectionCardLayout);
+
+        // LOCAL mode panel (serial + daemon)
+        JPanel localPanel = new JPanel(new GridLayout(1, 2, 10, 0));
+        localPanel.add(createLocalConnectionPanel());
+        localPanel.add(createDaemonPanel());
+        connectionCardPanel.add(localPanel, "local");
+
+        // REMOTE mode panel (server connection)
+        connectionCardPanel.add(createRemoteConnectionPanel(), "remote");
+
+        panel.add(connectionCardPanel, BorderLayout.CENTER);
+
+        return panel;
+    }
+
+    private JPanel createLocalConnectionPanel() {
         JPanel connectionPanel = new JPanel(new GridBagLayout());
         connectionPanel.setBorder(new TitledBorder(Messages.get("connection.title")));
         GridBagConstraints gbc = new GridBagConstraints();
@@ -228,12 +290,13 @@ public class HamlibGUI extends JFrame {
         connectPanel.add(connectionStatus);
         connectionPanel.add(connectPanel, gbc);
 
-        panel.add(connectionPanel);
+        return connectionPanel;
+    }
 
-        // Daemon panel
+    private JPanel createDaemonPanel() {
         JPanel daemonPanel = new JPanel(new GridBagLayout());
         daemonPanel.setBorder(new TitledBorder(Messages.get("hamlib.title")));
-        gbc = new GridBagConstraints();
+        GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(2, 5, 2, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
@@ -265,7 +328,56 @@ public class HamlibGUI extends JFrame {
         clientsLabel.setFont(clientsLabel.getFont().deriveFont(Font.ITALIC, 10f));
         daemonPanel.add(clientsLabel, gbc);
 
-        panel.add(daemonPanel);
+        return daemonPanel;
+    }
+
+    private JPanel createRemoteConnectionPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(new TitledBorder(Messages.get("remote.title")));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(2, 5, 2, 5);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        // Host
+        gbc.gridx = 0; gbc.gridy = 0;
+        panel.add(new JLabel(Messages.get("remote.host")), gbc);
+
+        gbc.gridx = 1; gbc.weightx = 1.0; gbc.gridwidth = 2;
+        remoteHostField = new JTextField("192.168.1.100", 20);
+        panel.add(remoteHostField, gbc);
+
+        // CAT Port
+        gbc.gridx = 0; gbc.gridy = 1; gbc.weightx = 0; gbc.gridwidth = 1;
+        panel.add(new JLabel(Messages.get("remote.catport")), gbc);
+
+        gbc.gridx = 1; gbc.weightx = 0.5;
+        remoteCatPortSpinner = new JSpinner(new SpinnerNumberModel(DEFAULT_TCP_PORT, 1024, 65535, 1));
+        JSpinner.NumberEditor catEditor = new JSpinner.NumberEditor(remoteCatPortSpinner, "#");
+        remoteCatPortSpinner.setEditor(catEditor);
+        panel.add(remoteCatPortSpinner, gbc);
+
+        // Audio Port
+        gbc.gridx = 0; gbc.gridy = 2;
+        panel.add(new JLabel(Messages.get("remote.audioport")), gbc);
+
+        gbc.gridx = 1; gbc.weightx = 0.5;
+        remoteAudioPortSpinner = new JSpinner(new SpinnerNumberModel(4533, 1024, 65535, 1));
+        JSpinner.NumberEditor audioEditor = new JSpinner.NumberEditor(remoteAudioPortSpinner, "#");
+        remoteAudioPortSpinner.setEditor(audioEditor);
+        panel.add(remoteAudioPortSpinner, gbc);
+
+        // Connect button and status
+        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 3;
+        gbc.weightx = 0; gbc.fill = GridBagConstraints.NONE;
+        gbc.anchor = GridBagConstraints.WEST;
+        JPanel connectPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        remoteConnectButton = new JButton(Messages.get("connection.connect"));
+        remoteConnectButton.addActionListener(e -> toggleRemoteConnection());
+        remoteConnectionStatus = new JLabel(Messages.get("connection.status.disconnected"));
+        remoteConnectionStatus.setForeground(Color.RED);
+        connectPanel.add(remoteConnectButton);
+        connectPanel.add(remoteConnectionStatus);
+        panel.add(connectPanel, gbc);
 
         return panel;
     }
@@ -867,6 +979,219 @@ public class HamlibGUI extends JFrame {
     }
 
     /**
+     * Toggle remote server connection.
+     */
+    private void toggleRemoteConnection() {
+        if (!remoteConnected) {
+            connectRemote();
+        } else {
+            disconnectRemote();
+        }
+    }
+
+    /**
+     * Connect to remote ftx1-hamlib server.
+     */
+    private void connectRemote() {
+        String host = remoteHostField.getText().trim();
+        if (host.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                Messages.get("remote.error.host"),
+                Messages.get("connection.error.title"),
+                JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        int catPort = (Integer) remoteCatPortSpinner.getValue();
+        int audioPort = (Integer) remoteAudioPortSpinner.getValue();
+
+        // Disable controls during connection
+        setRemoteControlsEnabled(false);
+        remoteConnectionStatus.setText(Messages.get("remote.connecting"));
+        remoteConnectionStatus.setForeground(Color.ORANGE);
+
+        // Connect in background thread
+        new SwingWorker<Void, Void>() {
+            private Exception error;
+
+            @Override
+            protected Void doInBackground() {
+                try {
+                    // Connect to remote CAT server
+                    remoteRigClient = new RigctlClient(host, catPort);
+                    remoteRigClient.connect();
+
+                    // Connect audio via AudioControlPanel
+                    if (audioControlPanel != null) {
+                        audioControlPanel.connectRemoteAudio(host, audioPort);
+                    }
+                } catch (Exception e) {
+                    error = e;
+                }
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                if (error != null) {
+                    JOptionPane.showMessageDialog(HamlibGUI.this,
+                        Messages.get("remote.error.connect", error.getMessage()),
+                        Messages.get("connection.error.title"),
+                        JOptionPane.ERROR_MESSAGE);
+                    setRemoteControlsEnabled(true);
+                    remoteConnectionStatus.setText(Messages.get("connection.status.disconnected"));
+                    remoteConnectionStatus.setForeground(Color.RED);
+                    if (remoteRigClient != null) {
+                        remoteRigClient.disconnect();
+                        remoteRigClient = null;
+                    }
+                } else {
+                    remoteConnected = true;
+                    connected = true;  // Set connected flag for status updates
+                    // Note: In remote mode, we don't use RigctlCommandHandler - we use RigctlClient directly
+                    updateRemoteUIState();
+                    appendResponse("Connected to remote server: " + host);
+
+                    // Start polling for status updates
+                    startRemoteStatusPolling();
+                }
+            }
+        }.execute();
+    }
+
+    /**
+     * Disconnect from remote server.
+     */
+    private void disconnectRemote() {
+        stopRemoteStatusPolling();
+
+        if (audioControlPanel != null) {
+            audioControlPanel.disconnectRemoteAudio();
+        }
+
+        if (remoteRigClient != null) {
+            remoteRigClient.disconnect();
+            remoteRigClient = null;
+        }
+
+        remoteConnected = false;
+        connected = false;
+        commandHandler = null;
+        updateRemoteUIState();
+        appendResponse("Disconnected from remote server");
+    }
+
+    private void setRemoteControlsEnabled(boolean enabled) {
+        remoteHostField.setEnabled(enabled);
+        remoteCatPortSpinner.setEnabled(enabled);
+        remoteAudioPortSpinner.setEnabled(enabled);
+        localModeButton.setEnabled(enabled);
+        remoteModeButton.setEnabled(enabled);
+    }
+
+    private void updateRemoteUIState() {
+        setRemoteControlsEnabled(!remoteConnected);
+        remoteConnectButton.setText(remoteConnected ?
+            Messages.get("connection.disconnect") :
+            Messages.get("connection.connect"));
+
+        if (remoteConnected) {
+            remoteConnectionStatus.setText(Messages.get("remote.connected", remoteHostField.getText()));
+            remoteConnectionStatus.setForeground(new Color(0, 128, 0));
+        } else {
+            remoteConnectionStatus.setText(Messages.get("connection.status.disconnected"));
+            remoteConnectionStatus.setForeground(Color.RED);
+            resetStatusLabels();
+        }
+    }
+
+    // Timer for polling remote status
+    private javax.swing.Timer remoteStatusTimer;
+
+    private void startRemoteStatusPolling() {
+        if (remoteStatusTimer != null) {
+            remoteStatusTimer.stop();
+        }
+
+        remoteStatusTimer = new javax.swing.Timer(500, e -> {
+            if (remoteConnected && remoteRigClient != null) {
+                pollRemoteStatus();
+            }
+        });
+        remoteStatusTimer.start();
+
+        // Initial poll
+        pollRemoteStatus();
+    }
+
+    private void stopRemoteStatusPolling() {
+        if (remoteStatusTimer != null) {
+            remoteStatusTimer.stop();
+            remoteStatusTimer = null;
+        }
+    }
+
+    private void pollRemoteStatus() {
+        if (!remoteConnected || remoteRigClient == null) return;
+
+        new SwingWorker<Void, Void>() {
+            private long freqA, freqB;
+            private String modeA, modeB;
+            private String vfo;
+            private boolean ptt;
+
+            @Override
+            protected Void doInBackground() {
+                try {
+                    freqA = remoteRigClient.getFrequency();
+                    modeA = remoteRigClient.getMode();
+                    vfo = remoteRigClient.getVFO();
+                    ptt = remoteRigClient.getPTT();
+
+                    // Try to get VFO-B info
+                    try {
+                        String currentVfo = vfo;
+                        if ("VFOA".equals(currentVfo)) {
+                            remoteRigClient.setVFO("VFOB");
+                            freqB = remoteRigClient.getFrequency();
+                            modeB = remoteRigClient.getMode();
+                            remoteRigClient.setVFO("VFOA");
+                        } else {
+                            freqB = freqA;
+                            modeB = modeA;
+                        }
+                    } catch (Exception e) {
+                        freqB = 0;
+                        modeB = "--";
+                    }
+                } catch (Exception e) {
+                    // Connection lost
+                    SwingUtilities.invokeLater(() -> {
+                        if (remoteConnected) {
+                            appendResponse("Connection lost: " + e.getMessage());
+                            disconnectRemote();
+                        }
+                    });
+                }
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                if (remoteConnected) {
+                    freqLabelA.setText(formatFrequency(freqA));
+                    modeLabelA.setText(modeA != null ? modeA : "--");
+                    freqLabelB.setText(formatFrequency(freqB));
+                    modeLabelB.setText(modeB != null ? modeB : "--");
+                    activeVfoLabel.setText(vfo != null ? vfo : "--");
+                    pttLabel.setText(ptt ? Messages.get("status.ptt.tx") : Messages.get("status.ptt.rx"));
+                    pttLabel.setForeground(ptt ? Color.RED : new Color(0, 128, 0));
+                }
+            }
+        }.execute();
+    }
+
+    /**
      * Enables auto-information mode on the radio.
      * Called automatically when connecting to the radio.
      */
@@ -1227,6 +1552,16 @@ public class HamlibGUI extends JFrame {
         scanSerialPorts();
 
         // Clear status
+        resetStatusLabels();
+
+        appendResponse(Messages.get("msg.disconnected"));
+        appendResponse("");
+    }
+
+    /**
+     * Resets all radio status labels to default values.
+     */
+    private void resetStatusLabels() {
         headTypeLabel.setText("<html>--<br>&nbsp;</html>");
         freqLabelA.setText("--");
         modeLabelA.setText("--");
@@ -1241,9 +1576,6 @@ public class HamlibGUI extends JFrame {
         alcLabel.setText("--");
         compLabel.setText("--");
         activeVfoIsB = false;
-
-        appendResponse(Messages.get("msg.disconnected"));
-        appendResponse("");
     }
 
     private void toggleDaemon() {

@@ -13,7 +13,6 @@ package com.yaesu.hamlib;
 
 import com.yaesu.ftx1.FTX1;
 import com.yaesu.ftx1.exception.CatConnectionException;
-import com.yaesu.hamlib.audio.client.AudioClientGUI;
 import com.yaesu.hamlib.gui.HamlibGUI;
 import com.yaesu.hamlib.i18n.Messages;
 import com.yaesu.hamlib.server.RigctldServer;
@@ -60,14 +59,10 @@ public class HamlibFTX1 {
             return;
         }
 
-        // Check for --gui or --audio-client flags first
+        // Check for --gui flag first
         for (String arg : args) {
             if (arg.equals("--gui") || arg.equals("-g")) {
                 launchGUI();
-                return;
-            }
-            if (arg.equals("--audio-client") || arg.equals("-a")) {
-                launchAudioClient();
                 return;
             }
         }
@@ -106,22 +101,6 @@ public class HamlibFTX1 {
 
         SwingUtilities.invokeLater(() -> {
             HamlibGUI gui = new HamlibGUI();
-            gui.setVisible(true);
-        });
-    }
-
-    /**
-     * Launch the audio client GUI application.
-     */
-    private static void launchAudioClient() {
-        try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception e) {
-            // Use default
-        }
-
-        SwingUtilities.invokeLater(() -> {
-            AudioClientGUI gui = new AudioClientGUI();
             gui.setVisible(true);
         });
     }
@@ -332,7 +311,6 @@ public class HamlibFTX1 {
         System.out.println();
         System.out.println("Options:");
         System.out.println("  -g, --gui               Launch graphical interface");
-        System.out.println("  -a, --audio-client      Launch audio client GUI (for remote operation)");
         System.out.println("  -r, --rig-file PORT     Serial port (required for CLI)");
         System.out.println("  -s, --serial-speed BAUD Baud rate (default: 38400)");
         System.out.println("  -t, --port PORT         TCP port for daemon mode (default: 4532)");
