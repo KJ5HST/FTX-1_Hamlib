@@ -28,6 +28,9 @@ public class RigctldServer {
     private final List<RigctlCommandListener> listeners = new CopyOnWriteArrayList<>();
     private final AtomicInteger clientIdCounter = new AtomicInteger(1);
 
+    // Track connected clients for AI broadcasting
+    private final CopyOnWriteArrayList<ClientWriter> connectedClients = new CopyOnWriteArrayList<>();
+
     private ServerSocket serverSocket;
     private ExecutorService executor;
     private volatile boolean running = false;
@@ -36,6 +39,39 @@ public class RigctldServer {
         this.rig = rig;
         this.port = port;
         this.verbose = verbose;
+    }
+
+    /**
+     * Broadcasts AI (Auto-Information) data to all connected clients.
+     * <p>
+     * AI data is prefixed with "AI:" so clients can distinguish it from
+     * command responses.
+     * </p>
+     *
+     * @param aiData the raw AI data from the radio (e.g., "FA00014074000;")
+     */
+    public void broadcastAI(String aiData) {
+        if (aiData == null || aiData.isEmpty()) return;
+
+        String message = "AI:" + aiData + "\n";
+
+        for (ClientWriter client : connectedClients) {
+            try {
+                client.write(message);
+            } catch (Exception e) {
+                // Client may have disconnected - will be cleaned up
+                if (verbose) {
+                    System.out.println("Failed to send AI to client: " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    /**
+     * Gets the number of connected clients.
+     */
+    public int getClientCount() {
+        return connectedClients.size();
     }
 
     /**
@@ -173,10 +209,16 @@ public class RigctldServer {
             String clientAddr = socket.getRemoteSocketAddress().toString();
             notifyClientConnected(clientId, clientAddr);
 
+            ClientWriter clientWriter = null;
+
             try (BufferedReader reader = new BufferedReader(
                      new InputStreamReader(socket.getInputStream()));
                  PrintWriter writer = new PrintWriter(
                      socket.getOutputStream(), true)) {
+
+                // Register this client for AI broadcasts
+                clientWriter = new ClientWriter(clientId, writer);
+                connectedClients.add(clientWriter);
 
                 String line;
                 while ((line = reader.readLine()) != null) {
@@ -202,6 +244,10 @@ public class RigctldServer {
                     System.out.println("Client disconnected: " + e.getMessage());
                 }
             } finally {
+                // Unregister from AI broadcasts
+                if (clientWriter != null) {
+                    connectedClients.remove(clientWriter);
+                }
                 notifyClientDisconnected(clientId);
                 try {
                     socket.close();
@@ -213,6 +259,30 @@ public class RigctldServer {
             if (verbose) {
                 System.out.println("Client handler finished");
             }
+        }
+    }
+
+    /**
+     * Wrapper for client writer to support AI broadcasting.
+     */
+    private static class ClientWriter {
+        private final String clientId;
+        private final PrintWriter writer;
+
+        public ClientWriter(String clientId, PrintWriter writer) {
+            this.clientId = clientId;
+            this.writer = writer;
+        }
+
+        public void write(String message) {
+            synchronized (writer) {
+                writer.print(message);
+                writer.flush();
+            }
+        }
+
+        public String getClientId() {
+            return clientId;
         }
     }
 }

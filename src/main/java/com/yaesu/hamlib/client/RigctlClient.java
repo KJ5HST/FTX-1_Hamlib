@@ -7,24 +7,50 @@ package com.yaesu.hamlib.client;
 import java.io.*;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.util.List;
+import java.util.concurrent.*;
 
 /**
  * Client for connecting to a remote rigctld-compatible server.
  * <p>
  * Implements the rigctl protocol to send commands and receive responses
  * from a remote Hamlib server (like ftx1-hamlib running in daemon mode).
+ * Also handles async AI (Auto-Information) updates pushed by the server.
  * </p>
  */
 public class RigctlClient {
 
     private static final int DEFAULT_TIMEOUT = 5000;  // 5 second timeout
+    private static final int READ_TIMEOUT = 100;  // Short timeout for async reads
 
     private final String host;
     private final int port;
     private Socket socket;
     private BufferedReader reader;
     private PrintWriter writer;
-    private boolean connected = false;
+    private volatile boolean connected = false;
+
+    // AI update listeners
+    private final List<AIUpdateListener> aiListeners = new CopyOnWriteArrayList<>();
+
+    // Response queue for command/response synchronization
+    private final BlockingQueue<String> responseQueue = new LinkedBlockingQueue<>();
+
+    // Reader thread for handling async data
+    private Thread readerThread;
+    private volatile boolean readerRunning = false;
+
+    /**
+     * Listener interface for AI (Auto-Information) updates.
+     */
+    public interface AIUpdateListener {
+        /**
+         * Called when an AI update is received from the server.
+         *
+         * @param aiData the raw AI data (e.g., "FA00014074000;")
+         */
+        void onAIUpdate(String aiData);
+    }
 
     /**
      * Creates a new RigctlClient.
@@ -38,23 +64,104 @@ public class RigctlClient {
     }
 
     /**
-     * Connects to the remote server.
+     * Adds an AI update listener.
+     */
+    public void addAIListener(AIUpdateListener listener) {
+        if (listener != null && !aiListeners.contains(listener)) {
+            aiListeners.add(listener);
+        }
+    }
+
+    /**
+     * Removes an AI update listener.
+     */
+    public void removeAIListener(AIUpdateListener listener) {
+        aiListeners.remove(listener);
+    }
+
+    /**
+     * Connects to the remote server and starts the reader thread.
      *
      * @throws IOException if connection fails
      */
     public void connect() throws IOException {
         socket = new Socket(host, port);
-        socket.setSoTimeout(DEFAULT_TIMEOUT);
+        socket.setSoTimeout(READ_TIMEOUT);
         reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream()), true);
         connected = true;
+
+        // Start reader thread
+        readerRunning = true;
+        readerThread = new Thread(this::readerLoop, "RigctlClient-Reader");
+        readerThread.setDaemon(true);
+        readerThread.start();
+    }
+
+    /**
+     * Background reader loop that handles both command responses and AI updates.
+     */
+    private void readerLoop() {
+        StringBuilder lineBuffer = new StringBuilder();
+
+        while (readerRunning && connected) {
+            try {
+                String line = reader.readLine();
+                if (line == null) {
+                    // Connection closed
+                    break;
+                }
+
+                // Check if this is an AI update
+                if (line.startsWith("AI:")) {
+                    String aiData = line.substring(3);  // Remove "AI:" prefix
+                    notifyAIListeners(aiData);
+                } else {
+                    // Regular response - put in queue for sendCommand()
+                    responseQueue.offer(line);
+                }
+            } catch (SocketTimeoutException e) {
+                // Normal timeout - continue loop
+            } catch (IOException e) {
+                if (readerRunning) {
+                    // Unexpected error
+                    break;
+                }
+            }
+        }
+
+        // Connection lost
+        if (connected) {
+            connected = false;
+        }
+    }
+
+    private void notifyAIListeners(String aiData) {
+        for (AIUpdateListener listener : aiListeners) {
+            try {
+                listener.onAIUpdate(aiData);
+            } catch (Exception e) {
+                // Ignore listener errors
+            }
+        }
     }
 
     /**
      * Disconnects from the remote server.
      */
     public void disconnect() {
+        readerRunning = false;
         connected = false;
+
+        if (readerThread != null) {
+            readerThread.interrupt();
+            try {
+                readerThread.join(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
         try {
             if (reader != null) reader.close();
             if (writer != null) writer.close();
@@ -65,6 +172,7 @@ public class RigctlClient {
         reader = null;
         writer = null;
         socket = null;
+        responseQueue.clear();
     }
 
     /**
@@ -86,39 +194,44 @@ public class RigctlClient {
             throw new IOException("Not connected");
         }
 
+        // Clear any stale responses
+        responseQueue.clear();
+
         // Send command
         writer.println(command);
 
-        // Read response (may be multiple lines until we get RPRT or single value)
+        // Wait for response (may be multiple lines until we get RPRT or single value)
         StringBuilder response = new StringBuilder();
-        String line;
 
         try {
-            while ((line = reader.readLine()) != null) {
+            long deadline = System.currentTimeMillis() + DEFAULT_TIMEOUT;
+
+            while (System.currentTimeMillis() < deadline) {
+                String line = responseQueue.poll(100, TimeUnit.MILLISECONDS);
+                if (line == null) continue;
+
                 if (line.startsWith("RPRT")) {
                     // End of response - RPRT 0 means success
                     if (!line.equals("RPRT 0")) {
-                        // Error response
                         throw new IOException("Command failed: " + line);
                     }
                     break;
                 }
+
                 if (response.length() > 0) {
                     response.append("\n");
                 }
                 response.append(line);
 
-                // For simple single-line responses (like frequency), break after first line
-                // unless we expect more data
+                // For simple single-line responses, check if we're done
                 if (!command.equals("1") && !command.equals("_") && !command.startsWith("\\")) {
-                    // Check if more data is available without blocking
-                    if (!reader.ready()) {
-                        break;
-                    }
+                    // Simple command - one line response
+                    break;
                 }
             }
-        } catch (SocketTimeoutException e) {
-            // Timeout reading - return what we have
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted waiting for response");
         }
 
         return response.toString().trim();

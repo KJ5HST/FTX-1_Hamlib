@@ -1052,8 +1052,18 @@ public class HamlibGUI extends JFrame {
                     updateRemoteUIState();
                     appendResponse("Connected to remote server: " + host);
 
-                    // Start polling for status updates
-                    startRemoteStatusPolling();
+                    // Register AI listener for push-based updates
+                    remoteRigClient.addAIListener(aiData -> {
+                        SwingUtilities.invokeLater(() -> {
+                            if (remoteConnected) {
+                                logComm("AI", aiData);
+                                updateStatusFromAutoInfo(aiData);
+                            }
+                        });
+                    });
+
+                    // Do initial state query (AI only sends changes)
+                    queryInitialRemoteState();
                 }
             }
         }.execute();
@@ -1063,8 +1073,6 @@ public class HamlibGUI extends JFrame {
      * Disconnect from remote server.
      */
     private void disconnectRemote() {
-        stopRemoteStatusPolling();
-
         if (audioControlPanel != null) {
             audioControlPanel.disconnectRemoteAudio();
         }
@@ -1105,33 +1113,11 @@ public class HamlibGUI extends JFrame {
         }
     }
 
-    // Timer for polling remote status
-    private javax.swing.Timer remoteStatusTimer;
-
-    private void startRemoteStatusPolling() {
-        if (remoteStatusTimer != null) {
-            remoteStatusTimer.stop();
-        }
-
-        remoteStatusTimer = new javax.swing.Timer(500, e -> {
-            if (remoteConnected && remoteRigClient != null) {
-                pollRemoteStatus();
-            }
-        });
-        remoteStatusTimer.start();
-
-        // Initial poll
-        pollRemoteStatus();
-    }
-
-    private void stopRemoteStatusPolling() {
-        if (remoteStatusTimer != null) {
-            remoteStatusTimer.stop();
-            remoteStatusTimer = null;
-        }
-    }
-
-    private void pollRemoteStatus() {
+    /**
+     * Query initial state from remote server.
+     * AI updates only push changes, so we need to get the current state once at connect time.
+     */
+    private void queryInitialRemoteState() {
         if (!remoteConnected || remoteRigClient == null) return;
 
         new SwingWorker<Void, Void>() {
@@ -1235,7 +1221,14 @@ public class HamlibGUI extends JFrame {
 
     // Listener for auto-info data from the radio
     private final CatDataListener autoInfoListener = data -> {
-        // Called from background thread, update UI on EDT
+        // Called from background thread
+
+        // Broadcast to connected remote clients (if server is running)
+        if (server != null) {
+            server.broadcastAI(data);
+        }
+
+        // Update UI on EDT
         SwingUtilities.invokeLater(() -> {
             // Log to Comm Monitor tab with "AI" direction marker
             logComm("AI", data);
