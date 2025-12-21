@@ -53,11 +53,11 @@ public class AudioControlPanel extends JPanel implements AudioStreamListener {
 
     private void initializeUI() {
         setLayout(new BorderLayout(5, 5));
-        setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
         // Main content panel
         JPanel contentPanel = new JPanel();
         contentPanel.setLayout(new BoxLayout(contentPanel, BoxLayout.Y_AXIS));
+        contentPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
         // Audio devices section
         contentPanel.add(createDevicesPanel());
@@ -69,14 +69,19 @@ public class AudioControlPanel extends JPanel implements AudioStreamListener {
 
         // Status section
         contentPanel.add(createStatusPanel());
+        contentPanel.add(Box.createVerticalStrut(10));
+
+        // Instructions panel
+        contentPanel.add(createInstructionsPanel());
 
         // Add filler
         contentPanel.add(Box.createVerticalGlue());
 
-        add(contentPanel, BorderLayout.NORTH);
-
-        // Instructions panel at bottom
-        add(createInstructionsPanel(), BorderLayout.SOUTH);
+        // Wrap in scroll pane
+        JScrollPane scrollPane = new JScrollPane(contentPanel);
+        scrollPane.setBorder(null);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        add(scrollPane, BorderLayout.CENTER);
     }
 
     private JPanel createDevicesPanel() {
