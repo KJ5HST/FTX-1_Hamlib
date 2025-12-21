@@ -410,6 +410,7 @@ public class HamlibGUI extends JFrame {
 
         // Audio Streaming tab
         audioControlPanel = new AudioControlPanel();
+        audioControlPanel.setStatusCallback(this::appendResponse);
         tabbedPane.addTab(Messages.get("tab.audio"), audioControlPanel);
 
         // Split pane
@@ -1025,12 +1026,24 @@ public class HamlibGUI extends JFrame {
             @Override
             protected Void doInBackground() {
                 try {
-                    // Connect to remote CAT server
-                    remoteRigClient = new RigctlClient(host, catPort);
-                    remoteRigClient.connect();
+                    // Connect to remote CAT server (optional - skip if port is 0)
+                    if (catPort > 0) {
+                        remoteRigClient = new RigctlClient(host, catPort);
+                        remoteRigClient.connect();
+
+                        // Register AI listener for push-based updates
+                        remoteRigClient.addAIListener(aiData -> {
+                            SwingUtilities.invokeLater(() -> {
+                                if (remoteConnected) {
+                                    logComm("AI", aiData);
+                                    updateStatusFromAutoInfo(aiData);
+                                }
+                            });
+                        });
+                    }
 
                     // Connect audio via AudioControlPanel
-                    if (audioControlPanel != null) {
+                    if (audioControlPanel != null && audioPort > 0) {
                         audioControlPanel.connectRemoteAudio(host, audioPort);
                     }
                 } catch (Exception e) {
@@ -1056,22 +1069,13 @@ public class HamlibGUI extends JFrame {
                 } else {
                     remoteConnected = true;
                     connected = true;  // Set connected flag for status updates
-                    // Note: In remote mode, we don't use RigctlCommandHandler - we use RigctlClient directly
                     updateRemoteUIState();
                     appendResponse("Connected to remote server: " + host);
 
-                    // Register AI listener for push-based updates
-                    remoteRigClient.addAIListener(aiData -> {
-                        SwingUtilities.invokeLater(() -> {
-                            if (remoteConnected) {
-                                logComm("AI", aiData);
-                                updateStatusFromAutoInfo(aiData);
-                            }
-                        });
-                    });
-
-                    // Do initial state query (AI only sends changes)
-                    queryInitialRemoteState();
+                    // Do initial state query if CAT is connected (AI only sends changes)
+                    if (remoteRigClient != null) {
+                        queryInitialRemoteState();
+                    }
                 }
             }
         }.execute();

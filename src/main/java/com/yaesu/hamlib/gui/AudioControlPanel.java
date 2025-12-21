@@ -7,7 +7,9 @@ package com.yaesu.hamlib.gui;
 import com.yaesu.hamlib.audio.*;
 import com.yaesu.hamlib.audio.client.AudioStreamClient;
 import com.yaesu.hamlib.audio.client.VirtualAudioBridge;
+import com.yaesu.hamlib.discovery.DiscoveryServer;
 import com.yaesu.hamlib.i18n.Messages;
+import com.yaesu.hamlib.util.NetworkUtils;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
@@ -43,6 +45,15 @@ public class AudioControlPanel extends JPanel implements AudioStreamListener {
     private AudioStreamServer audioServer;
     private AudioDeviceManager deviceManager;
     private boolean serverRunning = false;
+    private DiscoveryServer discoveryServer;
+    private AudioStatusCallback statusCallback;
+
+    /**
+     * Callback for status messages (e.g., to log to parent GUI).
+     */
+    public interface AudioStatusCallback {
+        void onStatusMessage(String message);
+    }
 
     // Remote mode state
     private boolean remoteMode = false;
@@ -512,6 +523,19 @@ public class AudioControlPanel extends JPanel implements AudioStreamListener {
     }
 
     /**
+     * Sets a callback for status messages.
+     */
+    public void setStatusCallback(AudioStatusCallback callback) {
+        this.statusCallback = callback;
+    }
+
+    private void logStatus(String message) {
+        if (statusCallback != null) {
+            statusCallback.onStatusMessage(message);
+        }
+    }
+
+    /**
      * Connects to a remote audio server.
      *
      * @param host the server hostname
@@ -609,6 +633,19 @@ public class AudioControlPanel extends JPanel implements AudioStreamListener {
             audioServer.addStreamListener(this);
             audioServer.start();
 
+            // Start discovery server for network auto-discovery (audio-only mode)
+            discoveryServer = new DiscoveryServer(0, port, "FTX-1 Audio", "", false);
+            try {
+                discoveryServer.start();
+            } catch (IOException e) {
+                // Discovery is optional - continue without it
+            }
+
+            // Show local IP for remote clients
+            String localIP = NetworkUtils.getLocalIPAddress();
+            logStatus("Audio server started on port " + port);
+            logStatus("Audio server address: " + localIP + ":" + port);
+
             serverRunning = true;
             updateUIState();
 
@@ -621,11 +658,17 @@ public class AudioControlPanel extends JPanel implements AudioStreamListener {
     }
 
     private void stopServer() {
+        if (discoveryServer != null) {
+            discoveryServer.stop();
+            discoveryServer = null;
+        }
+
         if (audioServer != null) {
             audioServer.stop();
             audioServer = null;
         }
 
+        logStatus("Audio server stopped");
         serverRunning = false;
         updateUIState();
     }
