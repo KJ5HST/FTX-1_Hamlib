@@ -670,6 +670,13 @@ public class AudioControlPanel extends JPanel implements AudioStreamListener {
     }
 
     /**
+     * Gets the configured audio port.
+     */
+    public int getAudioPort() {
+        return (Integer) audioPortSpinner.getValue();
+    }
+
+    /**
      * Stops the server if running. Called when parent GUI is closing.
      */
     public void shutdown() {

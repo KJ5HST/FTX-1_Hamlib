@@ -15,9 +15,12 @@ import com.yaesu.hamlib.RigctlCommandHandler;
 import com.yaesu.hamlib.audio.AudioStreamServer;
 import com.yaesu.hamlib.audio.client.AudioStreamClient;
 import com.yaesu.hamlib.client.RigctlClient;
+import com.yaesu.hamlib.discovery.DiscoveryClient;
+import com.yaesu.hamlib.discovery.DiscoveryServer;
 import com.yaesu.hamlib.i18n.Messages;
 import com.yaesu.hamlib.server.RigctlCommandListener;
 import com.yaesu.hamlib.server.RigctldServer;
+import com.yaesu.hamlib.util.NetworkUtils;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
@@ -43,6 +46,7 @@ public class HamlibGUI extends JFrame {
     // Connection state
     private FTX1 rig;
     private RigctldServer server;
+    private DiscoveryServer discoveryServer;
     private RigctlCommandHandler commandHandler;
     private boolean connected = false;
     private boolean daemonRunning = false;
@@ -107,6 +111,7 @@ public class HamlibGUI extends JFrame {
     private JTextField remoteHostField;
     private JSpinner remoteCatPortSpinner;
     private JSpinner remoteAudioPortSpinner;
+    private JButton discoverButton;
     private JButton remoteConnectButton;
     private JLabel remoteConnectionStatus;
 
@@ -366,15 +371,18 @@ public class HamlibGUI extends JFrame {
         remoteAudioPortSpinner.setEditor(audioEditor);
         panel.add(remoteAudioPortSpinner, gbc);
 
-        // Connect button and status
+        // Discover, Connect button and status
         gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 3;
         gbc.weightx = 0; gbc.fill = GridBagConstraints.NONE;
         gbc.anchor = GridBagConstraints.WEST;
         JPanel connectPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        discoverButton = new JButton(Messages.get("remote.discover"));
+        discoverButton.addActionListener(e -> discoverServers());
         remoteConnectButton = new JButton(Messages.get("connection.connect"));
         remoteConnectButton.addActionListener(e -> toggleRemoteConnection());
         remoteConnectionStatus = new JLabel(Messages.get("connection.status.disconnected"));
         remoteConnectionStatus.setForeground(Color.RED);
+        connectPanel.add(discoverButton);
         connectPanel.add(remoteConnectButton);
         connectPanel.add(remoteConnectionStatus);
         panel.add(connectPanel, gbc);
@@ -1093,8 +1101,73 @@ public class HamlibGUI extends JFrame {
         remoteHostField.setEnabled(enabled);
         remoteCatPortSpinner.setEnabled(enabled);
         remoteAudioPortSpinner.setEnabled(enabled);
+        discoverButton.setEnabled(enabled);
         localModeButton.setEnabled(enabled);
         remoteModeButton.setEnabled(enabled);
+    }
+
+    /**
+     * Discovers ftx1-hamlib servers on the local network.
+     */
+    private void discoverServers() {
+        discoverButton.setEnabled(false);
+        discoverButton.setText(Messages.get("remote.discovering"));
+
+        new SwingWorker<java.util.List<DiscoveryClient.ServerInfo>, Void>() {
+            @Override
+            protected java.util.List<DiscoveryClient.ServerInfo> doInBackground() {
+                try {
+                    return DiscoveryClient.discover();
+                } catch (Exception e) {
+                    return new java.util.ArrayList<>();
+                }
+            }
+
+            @Override
+            protected void done() {
+                discoverButton.setEnabled(true);
+                discoverButton.setText(Messages.get("remote.discover"));
+
+                try {
+                    java.util.List<DiscoveryClient.ServerInfo> servers = get();
+                    if (servers.isEmpty()) {
+                        JOptionPane.showMessageDialog(HamlibGUI.this,
+                            Messages.get("remote.discover.none"),
+                            Messages.get("remote.discover.title"),
+                            JOptionPane.INFORMATION_MESSAGE);
+                    } else if (servers.size() == 1) {
+                        // Single server - auto-fill
+                        DiscoveryClient.ServerInfo server = servers.get(0);
+                        remoteHostField.setText(server.getIpAddress());
+                        remoteCatPortSpinner.setValue(server.getCatPort());
+                        if (server.getAudioPort() > 0) {
+                            remoteAudioPortSpinner.setValue(server.getAudioPort());
+                        }
+                        appendResponse("Found: " + server.getDisplayName());
+                    } else {
+                        // Multiple servers - show selection dialog
+                        DiscoveryClient.ServerInfo selected = (DiscoveryClient.ServerInfo)
+                            JOptionPane.showInputDialog(HamlibGUI.this,
+                                Messages.get("remote.discover.select"),
+                                Messages.get("remote.discover.title"),
+                                JOptionPane.QUESTION_MESSAGE,
+                                null,
+                                servers.toArray(),
+                                servers.get(0));
+
+                        if (selected != null) {
+                            remoteHostField.setText(selected.getIpAddress());
+                            remoteCatPortSpinner.setValue(selected.getCatPort());
+                            if (selected.getAudioPort() > 0) {
+                                remoteAudioPortSpinner.setValue(selected.getAudioPort());
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    // Ignore
+                }
+            }
+        }.execute();
     }
 
     private void updateRemoteUIState() {
@@ -1588,12 +1661,27 @@ public class HamlibGUI extends JFrame {
             server.start();
             daemonRunning = true;
 
+            // Start discovery server for network auto-discovery
+            int audioPort = audioControlPanel != null ? audioControlPanel.getAudioPort() : 0;
+            String rigModel = rig != null ? "FTX-1 " + rig.getHeadType() : "FTX-1";
+            discoveryServer = new DiscoveryServer(port, audioPort, rigModel, "", false);
+            try {
+                discoveryServer.start();
+            } catch (IOException e) {
+                // Discovery is optional - log but continue
+                appendResponse("Note: Discovery server unavailable (port " +
+                    DiscoveryServer.DISCOVERY_PORT + " in use)");
+            }
+
             daemonButton.setText(Messages.get("hamlib.stop"));
             daemonStatus.setText(Messages.get("hamlib.status.running", port));
             daemonStatus.setForeground(new Color(0, 128, 0));
             tcpPortSpinner.setEnabled(false);
 
+            // Show local IP addresses for clients to connect
+            String localIP = NetworkUtils.getLocalIPAddress();
             appendResponse(Messages.get("msg.hamlib.started", port));
+            appendResponse("Server address: " + localIP + ":" + port);
             appendResponse(Messages.get("msg.hamlib.connect", port));
             appendResponse("");
 
@@ -1605,6 +1693,11 @@ public class HamlibGUI extends JFrame {
     }
 
     private void stopDaemon() {
+        if (discoveryServer != null) {
+            discoveryServer.stop();
+            discoveryServer = null;
+        }
+
         if (server != null) {
             server.stop();
             server = null;
