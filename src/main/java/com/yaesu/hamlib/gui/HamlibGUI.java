@@ -21,6 +21,7 @@ import com.yaesu.hamlib.i18n.Messages;
 import com.yaesu.hamlib.server.RigctlCommandListener;
 import com.yaesu.hamlib.server.RigctldServer;
 import com.yaesu.hamlib.util.NetworkUtils;
+import com.yaesu.hamlib.util.SerialPortDetector;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
@@ -56,6 +57,7 @@ public class HamlibGUI extends JFrame {
     private JComboBox<String> portCombo;
     private JComboBox<Integer> baudCombo;
     private JButton refreshPortsButton;
+    private JButton autoDetectButton;
     private JButton connectButton;
     private JLabel connectionStatus;
 
@@ -270,11 +272,18 @@ public class HamlibGUI extends JFrame {
         connectionPanel.add(portCombo, gbc);
 
         gbc.gridx = 2; gbc.weightx = 0;
+        JPanel portButtonsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
         refreshPortsButton = new JButton("\u21BB");  // Unicode refresh symbol
         refreshPortsButton.setToolTipText(Messages.get("connection.refresh.tooltip"));
         refreshPortsButton.setMargin(new Insets(2, 6, 2, 6));
         refreshPortsButton.addActionListener(e -> scanSerialPorts());
-        connectionPanel.add(refreshPortsButton, gbc);
+        portButtonsPanel.add(refreshPortsButton);
+
+        autoDetectButton = new JButton(Messages.get("connection.autodetect"));
+        autoDetectButton.setToolTipText(Messages.get("connection.autodetect.tooltip"));
+        autoDetectButton.addActionListener(e -> autoDetectRadio());
+        portButtonsPanel.add(autoDetectButton);
+        connectionPanel.add(portButtonsPanel, gbc);
 
         // Baud row
         gbc.gridx = 0; gbc.gridy = 1; gbc.weightx = 0;
@@ -892,6 +901,83 @@ public class HamlibGUI extends JFrame {
                 portCombo.setSelectedItem(currentSelection);
             }
         }
+    }
+
+    /**
+     * Auto-detect FTX-1 radio by probing serial ports.
+     */
+    private void autoDetectRadio() {
+        autoDetectButton.setEnabled(false);
+        autoDetectButton.setText(Messages.get("connection.autodetect.scanning"));
+        appendResponse("Scanning for FTX-1 radio...");
+
+        new SwingWorker<java.util.List<SerialPortDetector.DetectionResult>, String>() {
+            @Override
+            protected java.util.List<SerialPortDetector.DetectionResult> doInBackground() {
+                java.util.List<String> ports = SerialPortDetector.scanCandidatePorts();
+                publish("Found " + ports.size() + " candidate ports");
+
+                return SerialPortDetector.detect(ports, new SerialPortDetector.DetectionListener() {
+                    @Override
+                    public void onProgress(String port, String status) {
+                        publish("Probing " + port + "...");
+                    }
+
+                    @Override
+                    public void onDetected(SerialPortDetector.DetectionResult result) {
+                        publish("Found FTX-1 on " + result.getPort());
+                    }
+                });
+            }
+
+            @Override
+            protected void process(java.util.List<String> chunks) {
+                for (String msg : chunks) {
+                    appendResponse(msg);
+                }
+            }
+
+            @Override
+            protected void done() {
+                autoDetectButton.setEnabled(true);
+                autoDetectButton.setText(Messages.get("connection.autodetect"));
+
+                try {
+                    java.util.List<SerialPortDetector.DetectionResult> results = get();
+                    if (results.isEmpty()) {
+                        appendResponse("No FTX-1 radio found");
+                        JOptionPane.showMessageDialog(HamlibGUI.this,
+                            Messages.get("connection.autodetect.notfound"),
+                            Messages.get("connection.autodetect.title"),
+                            JOptionPane.INFORMATION_MESSAGE);
+                    } else if (results.size() == 1) {
+                        // Single radio found - auto-select
+                        SerialPortDetector.DetectionResult result = results.get(0);
+                        portCombo.setSelectedItem(result.getPort());
+                        baudCombo.setSelectedItem(result.getBaudRate());
+                        appendResponse("Selected: " + result);
+                    } else {
+                        // Multiple radios found - let user choose
+                        SerialPortDetector.DetectionResult selected =
+                            (SerialPortDetector.DetectionResult) JOptionPane.showInputDialog(
+                                HamlibGUI.this,
+                                Messages.get("connection.autodetect.select"),
+                                Messages.get("connection.autodetect.title"),
+                                JOptionPane.QUESTION_MESSAGE,
+                                null,
+                                results.toArray(),
+                                results.get(0));
+
+                        if (selected != null) {
+                            portCombo.setSelectedItem(selected.getPort());
+                            baudCombo.setSelectedItem(selected.getBaudRate());
+                        }
+                    }
+                } catch (Exception e) {
+                    appendResponse("Detection error: " + e.getMessage());
+                }
+            }
+        }.execute();
     }
 
     private void scanWindowsPorts(java.util.TreeSet<String> ports) {
