@@ -4,7 +4,8 @@
  */
 package com.yaesu.hamlib.audio.client;
 
-import com.yaesu.hamlib.audio.*;
+import com.yaesu.audio.*;
+import com.yaesu.audio.client.*;
 
 import java.io.BufferedReader;
 import java.io.IOException;

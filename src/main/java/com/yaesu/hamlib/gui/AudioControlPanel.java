@@ -4,11 +4,12 @@
  */
 package com.yaesu.hamlib.gui;
 
-import com.yaesu.hamlib.audio.*;
-import com.yaesu.hamlib.audio.client.AudioStreamClient;
-import com.yaesu.hamlib.audio.client.VirtualAudioBridge;
+import com.yaesu.audio.*;
+import com.yaesu.audio.client.AudioStreamClient;
+import com.yaesu.audio.client.VirtualAudioBridge;
 import com.yaesu.hamlib.discovery.DiscoveryServer;
 import com.yaesu.hamlib.i18n.Messages;
+import com.yaesu.hamlib.util.FTX1AudioHelper;
 import com.yaesu.hamlib.util.NetworkUtils;
 
 import javax.swing.*;
@@ -593,8 +594,8 @@ public class AudioControlPanel extends JPanel implements AudioStreamListener {
         }
 
         // Try to auto-select FTX-1 devices
-        AudioDeviceInfo ftx1Capture = deviceManager.findFTX1CaptureDevice();
-        AudioDeviceInfo ftx1Playback = deviceManager.findFTX1PlaybackDevice();
+        AudioDeviceInfo ftx1Capture = FTX1AudioHelper.findCaptureDevice(deviceManager);
+        AudioDeviceInfo ftx1Playback = FTX1AudioHelper.findPlaybackDevice(deviceManager);
 
         if (ftx1Capture != null) {
             captureDeviceCombo.setSelectedItem(ftx1Capture);

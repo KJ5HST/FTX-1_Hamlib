@@ -26,6 +26,13 @@
             <version>1.2.0</version>
         </dependency>
 
+        <!-- Net-Audio Streaming Library -->
+        <dependency>
+            <groupId>com.yaesu</groupId>
+            <artifactId>net-audio</artifactId>
+            <version>1.2.0</version>
+        </dependency>
+
         <!-- Logback for logging (required for comm monitor) -->
         <dependency>
             <groupId>ch.qos.logback</groupId>
