@@ -577,10 +577,10 @@ public class HamlibGUI extends JFrame {
             "cat.lm", "cat.ma", "cat.mc", "cat.md", "cat.mg", "cat.ml", "cat.mr", "cat.ms",
             "cat.mw", "cat.mx", "cat.nb", "cat.nl", "cat.nr", "cat.oa", "cat.ob", "cat.oi",
             "cat.os", "cat.pa", "cat.pb", "cat.pc", "cat.pl", "cat.pr", "cat.ps", "cat.qr",
-            "cat.qs", "cat.ra", "cat.rc", "cat.rd", "cat.rg", "cat.ri", "cat.rl", "cat.rm",
-            "cat.rs", "cat.rt", "cat.ru", "cat.sc", "cat.sd", "cat.sh", "cat.sm", "cat.sq",
+            "cat.qs", "cat.ra", "cat.rd", "cat.rg", "cat.ri", "cat.rl", "cat.rm",
+            "cat.rs", "cat.ru", "cat.sc", "cat.sd", "cat.sh", "cat.sm", "cat.sq",
             "cat.ss", "cat.st", "cat.sv", "cat.ts", "cat.tx", "cat.ty", "cat.ud", "cat.up",
-            "cat.vd", "cat.vg", "cat.vm", "cat.vs", "cat.vx", "cat.xt"
+            "cat.vd", "cat.vg", "cat.vm", "cat.vs", "cat.vx"
     };
 
     // Hamlib command keys - used to build localized command list
@@ -1269,9 +1269,13 @@ public class HamlibGUI extends JFrame {
         if (remoteConnected) {
             remoteConnectionStatus.setText(Messages.get("remote.connected", remoteHostField.getText()));
             remoteConnectionStatus.setForeground(new Color(0, 128, 0));
+            commandField.setEnabled(true);
+            sendButton.setEnabled(true);
         } else {
             remoteConnectionStatus.setText(Messages.get("connection.status.disconnected"));
             remoteConnectionStatus.setForeground(Color.RED);
+            commandField.setEnabled(false);
+            sendButton.setEnabled(false);
             resetStatusLabels();
         }
     }
@@ -1848,12 +1852,28 @@ public class HamlibGUI extends JFrame {
     }
 
     private void sendCommand(String command) {
-        if (!connected || commandHandler == null) {
+        if (!connected) {
             appendResponse("Error: Not connected");
             return;
         }
 
-        String response = commandHandler.handleCommand(command);
+        String response;
+        if (remoteConnected && remoteRigClient != null) {
+            // Remote mode - send via TCP
+            try {
+                response = remoteRigClient.sendCommand(command);
+            } catch (IOException e) {
+                appendResponse("Error: " + e.getMessage());
+                return;
+            }
+        } else if (commandHandler != null) {
+            // Local mode - use command handler directly
+            response = commandHandler.handleCommand(command);
+        } else {
+            appendResponse("Error: Not connected");
+            return;
+        }
+
         String catResponse = response.trim();
 
         // If this was a raw CAT command (w command), show only the interpretation

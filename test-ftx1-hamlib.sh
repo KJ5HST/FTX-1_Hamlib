@@ -21,6 +21,7 @@ VERBOSE=false
 QUICK=false
 FULL=false
 TX_TESTS=false
+SPA1_TESTS=false
 TCP_PORT=4532
 JAR_FILE="target/ftx1-hamlib-1.0.0-SNAPSHOT.jar"
 
@@ -45,6 +46,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-tx)
             TX_TESTS=false
+            shift
+            ;;
+        --spa1)
+            SPA1_TESTS=true
             shift
             ;;
         -h|--help)

@@ -2,9 +2,8 @@
  * FTX1-Hamlib - Hamlib-compatible daemon for FTX-1
  * Copyright (c) 2025 by Terrell Deppe (KJ5HST)
  *
- * ACKNOWLEDGMENTS:
- *   Jeremy Miller (KO4SSD) - RIT/XIT using RC/TC commands, EX0306 tuning steps
- *   See: https://github.com/Hamlib/Hamlib/pull/1826
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public License.
  */
 package com.yaesu.hamlib;
 
@@ -120,11 +119,11 @@ public class RigctlCommandHandler {
             case "v", "get_vfo" -> getVfo();
             case "V", "set_vfo" -> setVfo(args);
 
-            // RIT/XIT (Jeremy Miller's discovery - uses RC/TC commands)
-            case "j", "get_rit" -> getRit();
-            case "J", "set_rit" -> setRit(args);
-            case "z", "get_xit" -> getXit();
-            case "Z", "set_xit" -> setXit(args);
+            // RIT/XIT - maps to clarifier offset (FTX-1 uses CF command)
+            case "j", "get_rit" -> getClarifier();
+            case "J", "set_rit" -> setClarifier(args);
+            case "z", "get_xit" -> getClarifier();
+            case "Z", "set_xit" -> setClarifier(args);
 
             // Memory
             case "e", "get_mem" -> getMem();
@@ -324,42 +323,24 @@ public class RigctlCommandHandler {
     }
 
     // ========================================================================
-    // RIT/XIT Commands (Jeremy Miller's Discovery)
-    // Uses RC/TC commands since RT/XT return '?' on FTX-1 firmware
+    // Clarifier Commands (RIT/XIT map to clarifier on FTX-1)
+    // The FTX-1 uses the CF command for clarifier offset
     // ========================================================================
 
-    private String getRit() throws CatException {
+    private String getClarifier() throws CatException {
         synchronized (rigLock) {
-            int rit = rig.getRit();
-            return rit + "\n";
+            int offset = rig.getClarifierOffset(VFO.MAIN);
+            return offset + "\n";
         }
     }
 
-    private String setRit(String args) throws CatException {
+    private String setClarifier(String args) throws CatException {
         if (args.isEmpty()) {
             return "RPRT " + RPRT_EINVAL + "\n";
         }
-        int rit = Integer.parseInt(args.trim());
+        int offset = Integer.parseInt(args.trim());
         synchronized (rigLock) {
-            rig.setRit(rit);
-        }
-        return "RPRT " + RPRT_OK + "\n";
-    }
-
-    private String getXit() throws CatException {
-        synchronized (rigLock) {
-            int xit = rig.getXit();
-            return xit + "\n";
-        }
-    }
-
-    private String setXit(String args) throws CatException {
-        if (args.isEmpty()) {
-            return "RPRT " + RPRT_EINVAL + "\n";
-        }
-        int xit = Integer.parseInt(args.trim());
-        synchronized (rigLock) {
-            rig.setXit(xit);
+            rig.setClarifierOffset(VFO.MAIN, offset);
         }
         return "RPRT " + RPRT_OK + "\n";
     }
@@ -529,7 +510,7 @@ public class RigctlCommandHandler {
                 }
                 case "NB" -> {
                     int nbLevel = rig.getNoiseBlankerLevel(VFO.MAIN);
-                    yield String.format("%.2f\n", nbLevel / 15.0);
+                    yield String.format("%.2f\n", nbLevel / 10.0);
                 }
                 case "NOTCHF" -> {
                     int notchFreq = rig.getManualNotchFrequency(VFO.MAIN);
@@ -619,7 +600,7 @@ public class RigctlCommandHandler {
                 }
                 case "NB" -> {
                     double nbNorm = Double.parseDouble(value);
-                    rig.setNoiseBlankerLevel(VFO.MAIN, (int) (nbNorm * 15));
+                    rig.setNoiseBlankerLevel(VFO.MAIN, (int) (nbNorm * 10));
                     yield "RPRT " + RPRT_OK + "\n";
                 }
                 case "NOTCHF" -> {
