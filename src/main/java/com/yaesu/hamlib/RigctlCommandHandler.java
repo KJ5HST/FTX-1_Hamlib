@@ -470,7 +470,7 @@ public class RigctlCommandHandler {
                 }
                 case "SQL" -> {
                     int sql = rig.getSquelch(VFO.MAIN);
-                    yield String.format("%.2f\n", sql / 100.0);
+                    yield String.format("%.2f\n", sql / 255.0);
                 }
                 case "STRENGTH", "S" -> {
                     int smeter = rig.getSmeter();
@@ -570,7 +570,7 @@ public class RigctlCommandHandler {
                 }
                 case "SQL" -> {
                     double sqlNorm = Double.parseDouble(value);
-                    rig.setSquelch(VFO.MAIN, (int) (sqlNorm * 100));
+                    rig.setSquelch(VFO.MAIN, (int) (sqlNorm * 255));
                     yield "RPRT " + RPRT_OK + "\n";
                 }
                 case "MICGAIN" -> {
@@ -732,12 +732,16 @@ public class RigctlCommandHandler {
                     yield (xit != 0 ? "1" : "0") + "\n";
                 }
                 case "SBKIN" -> {
+                    // Break-in is now just on/off; semi vs full is determined by delay
                     int breakIn = rig.getBreakInMode();
-                    yield (breakIn == 1 ? "1" : "0") + "\n";  // 1 = semi
+                    int delay = rig.getBreakInDelay();
+                    yield (breakIn == 1 && delay > 30 ? "1" : "0") + "\n";
                 }
                 case "FBKIN" -> {
+                    // Full break-in (QSK) = break-in on with minimal delay
                     int breakIn = rig.getBreakInMode();
-                    yield (breakIn == 2 ? "1" : "0") + "\n";  // 2 = full (QSK)
+                    int delay = rig.getBreakInDelay();
+                    yield (breakIn == 1 && delay <= 30 ? "1" : "0") + "\n";
                 }
                 default -> "RPRT " + RPRT_EINVAL + "\n";
             };
@@ -816,13 +820,23 @@ public class RigctlCommandHandler {
                     yield "RPRT " + RPRT_OK + "\n";
                 }
                 case "SBKIN" -> {
-                    // Semi break-in: 0=off, 1=semi
-                    rig.setBreakInMode(value > 0 ? 1 : 0);
+                    // Semi break-in: turn on break-in with default delay
+                    if (value > 0) {
+                        rig.setBreakInMode(1);
+                        rig.setBreakInDelay(500);  // 500ms default semi delay
+                    } else {
+                        rig.setBreakInMode(0);
+                    }
                     yield "RPRT " + RPRT_OK + "\n";
                 }
                 case "FBKIN" -> {
-                    // Full break-in (QSK): 0=off, 2=full
-                    rig.setBreakInMode(value > 0 ? 2 : 0);
+                    // Full break-in (QSK): turn on break-in with minimal delay
+                    if (value > 0) {
+                        rig.setBreakInMode(1);
+                        rig.setBreakInDelay(30);  // Minimal delay for QSK
+                    } else {
+                        rig.setBreakInMode(0);
+                    }
                     yield "RPRT " + RPRT_OK + "\n";
                 }
                 default -> "RPRT " + RPRT_EINVAL + "\n";
