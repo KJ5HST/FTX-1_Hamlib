@@ -7,6 +7,7 @@ Visit https://github.com/KJ5HST/FTX-1_CAT for more details on ftx1-cat.
 Run this app.
 - Choose the serial port for you radio's /enhanced/ serial port.
 - Start the server (tab on right side with port 4532).
+
 Run WSJT-X (or whatever app you normally use with Hamlib).
 - Select "Hamlib NET rigctl" as the radio.
 - Network server: localhost:4532 (default)
