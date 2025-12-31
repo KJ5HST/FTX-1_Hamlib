@@ -3,14 +3,17 @@
 Hamlib-compatible emulator for Yaesu FTX-1 using the Java ftx1-cat library.
 Visit https://github.com/KJ5HST/FTX-1_CAT for more details on ftx1-cat.
 
-## Acknowledgments
-
-Special thanks to **Jeremy Miller (KO4SSD)** for his critical discoveries in
-[Hamlib PR #1826](https://github.com/Hamlib/Hamlib/pull/1826):
-
-- **RIT/XIT**: Standard RT/XT commands return `?` on FTX-1 firmware. Jeremy discovered
-  that RC (Receiver Clarifier) and TC (Transmit Clarifier) commands work correctly.
-- **Tuning Steps**: Mode-specific dial steps via EX0306 extended menu command.
+## Usage
+Run this app.
+- Choose the serial port for you radio's /enhanced/ serial port.
+- Start the server (tab on right side with port 4532).
+Run WSJT-X (or whatever app you normally use with Hamlib).
+- Select "Hamlib NET rigctl" as the radio.
+- Network server: localhost:4532 (default)
+- PTT Method: CAT
+- Mode: None
+- Split: None
+- Push the "Test CAT" button (it should turn green).
 
 ## Overview
 
